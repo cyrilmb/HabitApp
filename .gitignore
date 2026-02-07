@@ -1,0 +1,19 @@
+# Firebase credentials
+GoogleService-Info.plist
+
+# Xcode
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+DerivedData/
+build/
+
+# CocoaPods / SPM
+Pods/
+.build/
+
+# OS files
+.DS_Store
+*.swp
+*~
