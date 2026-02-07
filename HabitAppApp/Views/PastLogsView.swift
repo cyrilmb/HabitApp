@@ -15,9 +15,6 @@ struct PastLogsView: View {
     @State private var selectedActivityToEdit: Activity?
     @State private var selectedDrugLogToEdit: DrugLog?
     @State private var selectedBiometricToEdit: Biometric?
-    @State private var showEditActivity = false
-    @State private var showEditDrugLog = false
-    @State private var showEditBiometric = false
     @State private var showDeleteConfirmation = false
     @State private var logToDelete: LogItem?
 
@@ -53,25 +50,19 @@ struct PastLogsView: View {
         .refreshable {
             await viewModel.refreshLogs()
         }
-        .sheet(isPresented: $showEditActivity) {
-            if let activity = selectedActivityToEdit {
-                EditActivityView(activity: activity) { updatedActivity in
-                    viewModel.updateActivity(updatedActivity)
-                }
+        .sheet(item: $selectedActivityToEdit) { activity in
+            EditActivityView(activity: activity) { updatedActivity in
+                viewModel.updateActivity(updatedActivity)
             }
         }
-        .sheet(isPresented: $showEditDrugLog) {
-            if let drugLog = selectedDrugLogToEdit {
-                EditDrugLogView(drugLog: drugLog) { updatedLog in
-                    viewModel.updateDrugLog(updatedLog)
-                }
+        .sheet(item: $selectedDrugLogToEdit) { drugLog in
+            EditDrugLogView(drugLog: drugLog) { updatedLog in
+                viewModel.updateDrugLog(updatedLog)
             }
         }
-        .sheet(isPresented: $showEditBiometric) {
-            if let biometric = selectedBiometricToEdit {
-                EditBiometricView(biometric: biometric) { updatedBiometric in
-                    viewModel.updateBiometric(updatedBiometric)
-                }
+        .sheet(item: $selectedBiometricToEdit) { biometric in
+            EditBiometricView(biometric: biometric) { updatedBiometric in
+                viewModel.updateBiometric(updatedBiometric)
             }
         }
         .confirmationDialog(
@@ -162,13 +153,10 @@ struct PastLogsView: View {
         switch logItem.type {
         case .activity:
             selectedActivityToEdit = logItem.activity
-            showEditActivity = true
         case .drugLog:
             selectedDrugLogToEdit = logItem.drugLog
-            showEditDrugLog = true
         case .biometric:
             selectedBiometricToEdit = logItem.biometric
-            showEditBiometric = true
         }
     }
     
