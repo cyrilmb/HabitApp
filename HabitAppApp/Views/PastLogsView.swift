@@ -50,17 +50,23 @@ struct PastLogsView: View {
         .refreshable {
             await viewModel.refreshLogs()
         }
-        .sheet(item: $selectedActivityToEdit) { activity in
+        .sheet(item: $selectedActivityToEdit, onDismiss: {
+            viewModel.objectWillChange.send()
+        }) { activity in
             EditActivityView(activity: activity) { updatedActivity in
                 viewModel.updateActivity(updatedActivity)
             }
         }
-        .sheet(item: $selectedDrugLogToEdit) { drugLog in
+        .sheet(item: $selectedDrugLogToEdit, onDismiss: {
+            viewModel.objectWillChange.send()
+        }) { drugLog in
             EditDrugLogView(drugLog: drugLog) { updatedLog in
                 viewModel.updateDrugLog(updatedLog)
             }
         }
-        .sheet(item: $selectedBiometricToEdit) { biometric in
+        .sheet(item: $selectedBiometricToEdit, onDismiss: {
+            viewModel.objectWillChange.send()
+        }) { biometric in
             EditBiometricView(biometric: biometric) { updatedBiometric in
                 viewModel.updateBiometric(updatedBiometric)
             }
