@@ -63,12 +63,16 @@ class AnalyticsViewModel: ObservableObject {
     
     func loadData(for timeRange: TimeRange, date: Date = Date()) {
         isLoading = true
-        
+
         Task {
             do {
-                async let activitiesTask   = FirebaseService.shared.fetchActivities()
-                async let drugLogsTask     = FirebaseService.shared.fetchDrugLogs()
-                async let biometricsTask   = FirebaseService.shared.fetchBiometrics()
+                let (start, _) = self.windowBounds(for: timeRange, anchor: date)
+                // Use `since:` to scope the Firestore query for non-all ranges
+                let sinceDate: Date? = (timeRange == .all) ? nil : start
+
+                async let activitiesTask   = FirebaseService.shared.fetchActivities(since: sinceDate)
+                async let drugLogsTask     = FirebaseService.shared.fetchDrugLogs(since: sinceDate)
+                async let biometricsTask   = FirebaseService.shared.fetchBiometrics(since: sinceDate)
                 async let categoriesTask   = FirebaseService.shared.fetchActivityCategories()
 
                 let (fetchedActivities, fetchedDrugLogs, fetchedBiometrics, fetchedCategories) =
@@ -130,6 +134,8 @@ class AnalyticsViewModel: ObservableObject {
     // MARK: - Process Activity Data
     
     private func processActivityData() {
+        activityTimeData = []
+        activityTrendData = []
         totalActivities = activities.count
         
         let totalSeconds = activities.reduce(0.0) { $0 + $1.duration }
@@ -161,6 +167,10 @@ class AnalyticsViewModel: ObservableObject {
     // MARK: - Process Substance Data
     
     private func processSubstanceData() {
+        substanceCountData = []
+        substanceTrendData = []
+        filteredSubstanceCountData = []
+        filteredSubstanceTrendData = []
         totalSubstances = drugLogs.count
         substanceCategories = Array(Set(drugLogs.map { $0.categoryName })).sorted()
         
@@ -214,6 +224,9 @@ class AnalyticsViewModel: ObservableObject {
     // MARK: - Process Biometric Data
     
     private func processBiometricData() {
+        weightTrendData = []
+        sleepTrendData = []
+        bedWakeTimeData = []
         totalBiometrics = biometrics.count
         
         // Weight
@@ -257,6 +270,10 @@ class AnalyticsViewModel: ObservableObject {
     // MARK: - Process Mood Data
 
     private func processMoodData() {
+        moodScatterData = []
+        moodTrendData = []
+        moodQuadrantData = []
+
         let moodEntries = biometrics.filter { $0.type == .mood }
         totalMoodEntries = moodEntries.count
 

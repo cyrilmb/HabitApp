@@ -380,20 +380,20 @@ class BiometricEntryViewModel: ObservableObject {
     func loadRecentSleepLogs() {
         Task {
             do {
-                let allBiometrics = try await FirebaseService.shared.fetchBiometrics()
                 let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-                
+                let recentBiometrics = try await FirebaseService.shared.fetchBiometrics(since: sevenDaysAgo)
+
                 await MainActor.run {
-                    self.recentBedTimes = allBiometrics
-                        .filter { $0.type == .bedTime && $0.timestamp >= sevenDaysAgo && $0.pairedSleepId == nil }
+                    self.recentBedTimes = recentBiometrics
+                        .filter { $0.type == .bedTime && $0.pairedSleepId == nil }
                         .sorted { $0.timestamp > $1.timestamp }
-                    
-                    self.recentWakeTimes = allBiometrics
-                        .filter { $0.type == .wakeTime && $0.timestamp >= sevenDaysAgo && $0.pairedSleepId == nil }
+
+                    self.recentWakeTimes = recentBiometrics
+                        .filter { $0.type == .wakeTime && $0.pairedSleepId == nil }
                         .sorted { $0.timestamp > $1.timestamp }
-                    
-                    self.existingSleepDurations = allBiometrics
-                        .filter { $0.type == .sleepDuration && $0.timestamp >= sevenDaysAgo }
+
+                    self.existingSleepDurations = recentBiometrics
+                        .filter { $0.type == .sleepDuration }
                 }
             } catch {
                 print("Error loading sleep logs: \(error)")
@@ -403,22 +403,22 @@ class BiometricEntryViewModel: ObservableObject {
     
     func checkAndCreateSleepDuration() async {
         createdSleepDuration = false
-        
+        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+
         do {
-            let allBiometrics = try await FirebaseService.shared.fetchBiometrics()
-            let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-            
-            recentBedTimes = allBiometrics
-                .filter { $0.type == .bedTime && $0.timestamp >= sevenDaysAgo && $0.pairedSleepId == nil }
+            let recentBiometrics = try await FirebaseService.shared.fetchBiometrics(since: sevenDaysAgo)
+
+            recentBedTimes = recentBiometrics
+                .filter { $0.type == .bedTime && $0.pairedSleepId == nil }
                 .sorted { $0.timestamp > $1.timestamp }
-            
-            recentWakeTimes = allBiometrics
-                .filter { $0.type == .wakeTime && $0.timestamp >= sevenDaysAgo && $0.pairedSleepId == nil }
+
+            recentWakeTimes = recentBiometrics
+                .filter { $0.type == .wakeTime && $0.pairedSleepId == nil }
                 .sorted { $0.timestamp > $1.timestamp }
-            
-            existingSleepDurations = allBiometrics
-                .filter { $0.type == .sleepDuration && $0.timestamp >= sevenDaysAgo }
-            
+
+            existingSleepDurations = recentBiometrics
+                .filter { $0.type == .sleepDuration }
+
         } catch {
             print("Error reloading sleep data: \(error)")
             return
@@ -463,7 +463,7 @@ class BiometricEntryViewModel: ObservableObject {
             try await FirebaseService.shared.saveBiometric(sleepDuration)
             
             // Fetch back to get the document ID of the new sleep duration
-            let updated = try await FirebaseService.shared.fetchBiometrics()
+            let updated = try await FirebaseService.shared.fetchBiometrics(type: .sleepDuration, since: sevenDaysAgo)
             guard let created = updated.first(where: {
                 $0.type == .sleepDuration && calendar.isDate($0.timestamp, inSameDayAs: sleepDate)
             }), let sleepId = created.id else { return }

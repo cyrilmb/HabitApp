@@ -20,12 +20,12 @@ struct PastLogsView: View {
     @State private var showEditBiometric = false
     @State private var showDeleteConfirmation = false
     @State private var logToDelete: LogItem?
-    
+
     var body: some View {
         ZStack {
             Color(.systemGroupedBackground)
                 .ignoresSafeArea()
-            
+
             VStack(spacing: 0) {
                 // Filter Picker
                 Picker("Filter", selection: $selectedFilter) {
@@ -35,12 +35,12 @@ struct PastLogsView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding()
-                
+
                 // Content
-                if viewModel.isLoading {
+                if viewModel.isLoading && viewModel.allLogs.isEmpty {
                     ProgressView("Loading logs...")
                         .frame(maxHeight: .infinity)
-                } else if filteredLogs.isEmpty {
+                } else if viewModel.filteredLogs.isEmpty {
                     emptyStateView
                 } else {
                     logsList
@@ -91,6 +91,12 @@ struct PastLogsView: View {
         .onAppear {
             viewModel.loadLogs()
         }
+        .onChange(of: selectedFilter) { _, newValue in
+            viewModel.selectedFilter = newValue
+        }
+        .onChange(of: searchText) { _, newValue in
+            viewModel.searchText = newValue
+        }
     }
     
     // MARK: - Empty State
@@ -116,70 +122,38 @@ struct PastLogsView: View {
     
     private var logsList: some View {
         List {
-            ForEach(groupedLogs.keys.sorted(by: >), id: \.self) { date in
+            ForEach(viewModel.groupedLogs.keys.sorted(by: >), id: \.self) { date in
                 Section(header: Text(formatSectionHeader(date))) {
-                    ForEach(groupedLogs[date] ?? [], id: \.id) { logItem in
+                    ForEach(viewModel.groupedLogs[date] ?? [], id: \.id) { logItem in
                         LogRowView(logItem: logItem) {
-                            // Edit action
                             editLog(logItem)
                         } onDelete: {
-                            // Delete action - show confirmation
                             logToDelete = logItem
                             showDeleteConfirmation = true
                         }
                     }
                 }
             }
-        }
-        .listStyle(.insetGrouped)
-    }
-    
-    // MARK: - Computed Properties
-    
-    private var filteredLogs: [LogItem] {
-        var logs = viewModel.allLogs
-        
-        // Apply filter
-        switch selectedFilter {
-        case .all:
-            break
-        case .activities:
-            logs = logs.filter { $0.type == .activity }
-        case .substances:
-            logs = logs.filter { $0.type == .drugLog }
-        case .biometrics:
-            logs = logs.filter { $0.type == .biometric }
-        }
-        
-        // Apply search
-        if !searchText.isEmpty {
-            logs = logs.filter { logItem in
-                switch logItem.type {
-                case .activity:
-                    if let activity = logItem.activity {
-                        return activity.categoryName.localizedCaseInsensitiveContains(searchText)
-                    }
-                case .drugLog:
-                    if let drugLog = logItem.drugLog {
-                        return drugLog.categoryName.localizedCaseInsensitiveContains(searchText) ||
-                               drugLog.method.localizedCaseInsensitiveContains(searchText)
-                    }
-                case .biometric:
-                    if let biometric = logItem.biometric {
-                        return biometric.type.rawValue.localizedCaseInsensitiveContains(searchText)
+
+            if viewModel.hasMoreLogs {
+                Section {
+                    Button {
+                        viewModel.loadMoreLogs()
+                    } label: {
+                        HStack {
+                            Spacer()
+                            if viewModel.isLoading {
+                                ProgressView()
+                            } else {
+                                Text("Load More")
+                            }
+                            Spacer()
+                        }
                     }
                 }
-                return false
             }
         }
-        
-        return logs
-    }
-    
-    private var groupedLogs: [Date: [LogItem]] {
-        Dictionary(grouping: filteredLogs) { logItem in
-            Calendar.current.startOfDay(for: logItem.date)
-        }
+        .listStyle(.insetGrouped)
     }
     
     // MARK: - Actions
@@ -454,114 +428,219 @@ struct LogRowView: View {
 
 class PastLogsViewModel: ObservableObject {
     @Published var allLogs: [LogItem] = []
+    @Published var filteredLogs: [LogItem] = []
+    @Published var groupedLogs: [Date: [LogItem]] = [:]
     @Published var isLoading = false
-    
+    @Published var hasMoreLogs = true
+
+    private let pageSize = 50
+    private var lastActivityDate: Date?
+    private var lastDrugLogDate: Date?
+    private var lastBiometricDate: Date?
+
+    var selectedFilter: LogFilter = .all {
+        didSet { recomputeFilteredLogs() }
+    }
+
+    var searchText: String = "" {
+        didSet { recomputeFilteredLogs() }
+    }
+
     func loadLogs() {
         isLoading = true
-        
+        lastActivityDate = nil
+        lastDrugLogDate = nil
+        lastBiometricDate = nil
+
         Task {
             do {
-                async let activities = FirebaseService.shared.fetchActivities()
-                async let drugLogs = FirebaseService.shared.fetchDrugLogs()
-                async let biometrics = FirebaseService.shared.fetchBiometrics()
-                
+                async let activities = FirebaseService.shared.fetchActivities(limit: pageSize)
+                async let drugLogs = FirebaseService.shared.fetchDrugLogs(limit: pageSize)
+                async let biometrics = FirebaseService.shared.fetchBiometrics(limit: pageSize)
+
                 let (loadedActivities, loadedDrugLogs, loadedBiometrics) = try await (activities, drugLogs, biometrics)
-                
-                let activityItems = loadedActivities.map { LogItem(activity: $0) }
-                let drugLogItems = loadedDrugLogs.map { LogItem(drugLog: $0) }
-                let biometricItems = loadedBiometrics.map { LogItem(biometric: $0) }
-                
+
                 await MainActor.run {
+                    let activityItems = loadedActivities.map { LogItem(activity: $0) }
+                    let drugLogItems = loadedDrugLogs.map { LogItem(drugLog: $0) }
+                    let biometricItems = loadedBiometrics.map { LogItem(biometric: $0) }
+
                     self.allLogs = (activityItems + drugLogItems + biometricItems).sorted { $0.date > $1.date }
+                    self.lastActivityDate = loadedActivities.last?.startTime
+                    self.lastDrugLogDate = loadedDrugLogs.last?.timestamp
+                    self.lastBiometricDate = loadedBiometrics.last?.timestamp
+                    self.hasMoreLogs = loadedActivities.count == self.pageSize
+                        || loadedDrugLogs.count == self.pageSize
+                        || loadedBiometrics.count == self.pageSize
+                    self.recomputeFilteredLogs()
                     self.isLoading = false
                 }
             } catch {
                 print("Error loading logs: \(error)")
-                await MainActor.run {
-                    self.isLoading = false
-                }
+                await MainActor.run { self.isLoading = false }
             }
         }
     }
-    
-    func refreshLogs() async {
-        await MainActor.run {
-            isLoading = true
+
+    func loadMoreLogs() {
+        guard hasMoreLogs, !isLoading else { return }
+        isLoading = true
+
+        Task {
+            do {
+                // Fetch next page using cursor dates and limit+1 to detect more
+                // We fetch items OLDER than the last seen date by using a "before" approach:
+                // Since our queries order descending, we need items with dates before our cursors.
+                // The `since` parameter uses >=, so we pass nil and handle with limit offset.
+                // Instead, we fetch all from beginning with increased limit.
+                let currentCount = allLogs.count
+                let nextLimit = currentCount + pageSize
+
+                async let activities = FirebaseService.shared.fetchActivities(limit: nextLimit)
+                async let drugLogs = FirebaseService.shared.fetchDrugLogs(limit: nextLimit)
+                async let biometrics = FirebaseService.shared.fetchBiometrics(limit: nextLimit)
+
+                let (loadedActivities, loadedDrugLogs, loadedBiometrics) = try await (activities, drugLogs, biometrics)
+
+                await MainActor.run {
+                    let activityItems = loadedActivities.map { LogItem(activity: $0) }
+                    let drugLogItems = loadedDrugLogs.map { LogItem(drugLog: $0) }
+                    let biometricItems = loadedBiometrics.map { LogItem(biometric: $0) }
+
+                    let newAll = (activityItems + drugLogItems + biometricItems).sorted { $0.date > $1.date }
+                    self.hasMoreLogs = newAll.count > self.allLogs.count
+                    self.allLogs = newAll
+                    self.recomputeFilteredLogs()
+                    self.isLoading = false
+                }
+            } catch {
+                print("Error loading more logs: \(error)")
+                await MainActor.run { self.isLoading = false }
+            }
         }
-        
+    }
+
+    func refreshLogs() async {
+        await MainActor.run { isLoading = true }
+
         do {
-            async let activities = FirebaseService.shared.fetchActivities()
-            async let drugLogs = FirebaseService.shared.fetchDrugLogs()
-            async let biometrics = FirebaseService.shared.fetchBiometrics()
-            
+            async let activities = FirebaseService.shared.fetchActivities(limit: pageSize)
+            async let drugLogs = FirebaseService.shared.fetchDrugLogs(limit: pageSize)
+            async let biometrics = FirebaseService.shared.fetchBiometrics(limit: pageSize)
+
             let (loadedActivities, loadedDrugLogs, loadedBiometrics) = try await (activities, drugLogs, biometrics)
-            
-            let activityItems = loadedActivities.map { LogItem(activity: $0) }
-            let drugLogItems = loadedDrugLogs.map { LogItem(drugLog: $0) }
-            let biometricItems = loadedBiometrics.map { LogItem(biometric: $0) }
-            
+
             await MainActor.run {
+                let activityItems = loadedActivities.map { LogItem(activity: $0) }
+                let drugLogItems = loadedDrugLogs.map { LogItem(drugLog: $0) }
+                let biometricItems = loadedBiometrics.map { LogItem(biometric: $0) }
+
                 self.allLogs = (activityItems + drugLogItems + biometricItems).sorted { $0.date > $1.date }
+                self.hasMoreLogs = loadedActivities.count == self.pageSize
+                    || loadedDrugLogs.count == self.pageSize
+                    || loadedBiometrics.count == self.pageSize
+                self.recomputeFilteredLogs()
                 self.isLoading = false
             }
         } catch {
             print("Error refreshing logs: \(error)")
-            await MainActor.run {
-                self.isLoading = false
-            }
+            await MainActor.run { self.isLoading = false }
         }
     }
-    
+
+    private func recomputeFilteredLogs() {
+        var logs = allLogs
+
+        switch selectedFilter {
+        case .all:
+            break
+        case .activities:
+            logs = logs.filter { $0.type == .activity }
+        case .substances:
+            logs = logs.filter { $0.type == .drugLog }
+        case .biometrics:
+            logs = logs.filter { $0.type == .biometric }
+        }
+
+        if !searchText.isEmpty {
+            logs = logs.filter { logItem in
+                switch logItem.type {
+                case .activity:
+                    return logItem.activity?.categoryName.localizedCaseInsensitiveContains(searchText) ?? false
+                case .drugLog:
+                    if let drugLog = logItem.drugLog {
+                        return drugLog.categoryName.localizedCaseInsensitiveContains(searchText) ||
+                               drugLog.method.localizedCaseInsensitiveContains(searchText)
+                    }
+                    return false
+                case .biometric:
+                    return logItem.biometric?.type.rawValue.localizedCaseInsensitiveContains(searchText) ?? false
+                }
+            }
+        }
+
+        filteredLogs = logs
+        groupedLogs = Dictionary(grouping: logs) { logItem in
+            Calendar.current.startOfDay(for: logItem.date)
+        }
+    }
+
     func updateActivity(_ activity: Activity) {
         if let index = allLogs.firstIndex(where: { $0.id == activity.id }) {
             allLogs[index] = LogItem(activity: activity)
+            recomputeFilteredLogs()
         }
     }
-    
+
     func updateDrugLog(_ drugLog: DrugLog) {
         if let index = allLogs.firstIndex(where: { $0.id == drugLog.id }) {
             allLogs[index] = LogItem(drugLog: drugLog)
+            recomputeFilteredLogs()
         }
     }
-    
+
     func updateBiometric(_ biometric: Biometric) {
         if let index = allLogs.firstIndex(where: { $0.id == biometric.id }) {
             allLogs[index] = LogItem(biometric: biometric)
+            recomputeFilteredLogs()
         }
     }
-    
+
     func deleteActivity(_ activity: Activity) {
         Task {
             do {
                 try await FirebaseService.shared.deleteActivity(activity)
                 await MainActor.run {
                     allLogs.removeAll { $0.id == activity.id }
+                    recomputeFilteredLogs()
                 }
             } catch {
                 print("Error deleting activity: \(error)")
             }
         }
     }
-    
+
     func deleteDrugLog(_ drugLog: DrugLog) {
         Task {
             do {
                 try await FirebaseService.shared.deleteDrugLog(drugLog)
                 await MainActor.run {
                     allLogs.removeAll { $0.id == drugLog.id }
+                    recomputeFilteredLogs()
                 }
             } catch {
                 print("Error deleting drug log: \(error)")
             }
         }
     }
-    
+
     func deleteBiometric(_ biometric: Biometric) {
         Task {
             do {
                 try await FirebaseService.shared.deleteBiometric(biometric)
                 await MainActor.run {
                     allLogs.removeAll { $0.id == biometric.id }
+                    recomputeFilteredLogs()
                 }
             } catch {
                 print("Error deleting biometric: \(error)")

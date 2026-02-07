@@ -2,93 +2,81 @@
 //  HomeView.swift
 //  HabitTracker
 //
-//  Main home screen with options to log activities, drugs, and biometrics
-//
 
 import SwiftUI
 
 struct HomeView: View {
-    @StateObject private var firebaseService = FirebaseService.shared
+    @ObservedObject private var firebaseService = FirebaseService.shared
+    @ObservedObject private var sheetManager = SheetManager.shared
+    @ObservedObject private var timerService = TimerService.shared
     @State private var showActivitySheet = false
     @State private var showDrugSheet = false
     @State private var showBiometricSheet = false
     @State private var navigateToPastLogs = false
     @State private var navigateToDataDisplay = false
-    
+    @State private var showTimerSheet = false
+    @State private var timerSheetActivity: Activity?  // Capture activity for timer sheet
+
     var body: some View {
         NavigationStack {
             ZStack {
-                // Background gradient
                 LinearGradient(
                     colors: [Color.blue.opacity(0.1), Color.purple.opacity(0.1)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
                 .ignoresSafeArea()
-                
+
                 VStack(spacing: 30) {
-                    // Welcome header
                     VStack(spacing: 8) {
-                        Image(systemName: "chart.line.uptrend.xyaxis.circle.fill")
+                        Image(systemName: "target")
                             .font(.system(size: 60))
                             .foregroundStyle(.blue)
-                        
+
                         Text("Habit Tracker")
                             .font(.largeTitle)
                             .fontWeight(.bold)
-                        
+
                         Text("Track your daily activities and habits")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                     }
                     .padding(.top, 40)
-                    
+
                     Spacer()
-                    
-                    // Main action buttons
+
                     VStack(spacing: 20) {
-                        // Log Activity Button
                         ActionButton(
                             icon: "timer",
                             title: "Log Activity",
                             subtitle: "Track time spent on activities",
                             color: .blue
-                        ) {
-                            showActivitySheet = true
-                        }
-                        
-                        // Log Drug Button
+                        ) { showActivitySheet = true }
+
                         ActionButton(
                             icon: "pill",
                             title: "Log Substance",
                             subtitle: "Record drug or alcohol use",
                             color: .purple
-                        ) {
-                            showDrugSheet = true
-                        }
-                        
-                        // Biometric Button
+                        ) { showDrugSheet = true }
+
                         ActionButton(
                             icon: "heart.text.square",
                             title: "Log Biometric",
                             subtitle: "Enter health data",
                             color: .red
-                        ) {
-                            showBiometricSheet = true
-                        }
+                        ) { showBiometricSheet = true }
                     }
                     .padding(.horizontal)
-                    
+
                     Spacer()
-                    
-                    // Bottom navigation buttons
+
                     HStack(spacing: 20) {
                         NavigationButton(
                             icon: "list.bullet.clipboard",
                             title: "Past Logs",
                             action: { navigateToPastLogs = true }
                         )
-                        
                         NavigationButton(
                             icon: "chart.bar.fill",
                             title: "Analytics",
@@ -98,6 +86,37 @@ struct HomeView: View {
                     .padding(.horizontal)
                     .padding(.bottom, 30)
                 }
+
+                // Toast overlay
+                VStack {
+                    if sheetManager.showToast {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.white)
+                            Text("Saved!")
+                                .font(.headline)
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 12)
+                        .background(Color(.systemGray))
+                        .clipShape(Capsule())
+                        .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                    Spacer()
+                }
+                .padding(.top, 16)
+                .animation(.easeOut(duration: 0.3), value: sheetManager.showToast)
+                .allowsHitTesting(false)
+                
+                // Floating timer button - top right corner
+                if timerService.isRunning {
+                    TimerPillView {
+                        timerSheetActivity = timerService.currentActivity
+                        showTimerSheet = true
+                    }
+                }
             }
             .navigationDestination(isPresented: $navigateToPastLogs) {
                 PastLogsView()
@@ -106,26 +125,45 @@ struct HomeView: View {
                 DataDisplayView()
             }
             .sheet(isPresented: $showActivitySheet) {
-                ActivitySelectionSheet()
+                ActivitySelectionView()
             }
             .sheet(isPresented: $showDrugSheet) {
-                DrugLogSheet()
+                DrugLogView()
             }
             .sheet(isPresented: $showBiometricSheet) {
-                BiometricPlaceholderView()
+                BiometricEntryView()
+            }
+            .sheet(isPresented: $showTimerSheet) {
+                if let activity = timerSheetActivity {
+                    NavigationStack {
+                        ActivityTimerView(activity: activity)
+                    }
+                }
+            }
+            .onChange(of: sheetManager.activeSheetToDismiss) { _, newValue in
+                guard let which = newValue else { return }
+                switch which {
+                case .activity:
+                    showActivitySheet = false
+                    showTimerSheet = false  // Also close timer sheet if open
+                case .substance:
+                    showDrugSheet = false
+                case .biometric:
+                    showBiometricSheet = false
+                }
+                sheetManager.clearDismiss()
             }
         }
     }
 }
 
-// MARK: - Action Button Component
 struct ActionButton: View {
     let icon: String
     let title: String
     let subtitle: String
     let color: Color
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 16) {
@@ -135,7 +173,7 @@ struct ActionButton: View {
                     .frame(width: 60, height: 60)
                     .background(color.gradient)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
-                
+
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
                         .font(.headline)
@@ -144,9 +182,9 @@ struct ActionButton: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
+
                 Spacer()
-                
+
                 Image(systemName: "chevron.right")
                     .foregroundColor(.secondary)
             }
@@ -159,19 +197,53 @@ struct ActionButton: View {
     }
 }
 
-// MARK: - Navigation Button Component
+struct TimerPillView: View {
+    @ObservedObject private var timerService = TimerService.shared
+    let onTap: () -> Void
+
+    var body: some View {
+        VStack {
+            HStack {
+                Spacer()
+                Button(action: onTap) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "timer")
+                            .font(.subheadline)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(timerService.currentActivity?.categoryName ?? "Activity")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                            Text(timerService.formatTime(timerService.elapsedTime))
+                                .font(.caption2)
+                                .monospacedDigit()
+                        }
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Color.blue.gradient)
+                    .clipShape(Capsule())
+                    .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+                }
+                .padding(.trailing, 16)
+                .padding(.top, 8)
+            }
+            Spacer()
+        }
+    }
+}
+
 struct NavigationButton: View {
     let icon: String
     let title: String
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             VStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.system(size: 28))
                     .foregroundColor(.blue)
-                
                 Text(title)
                     .font(.caption)
                     .foregroundColor(.primary)
@@ -182,58 +254,6 @@ struct NavigationButton: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Placeholder Views (to be built in later milestones)
-
-struct ActivitySelectionSheet: View {
-    var body: some View {
-        Text("Activity Selection - Coming in Milestone 2")
-            .font(.headline)
-            .padding()
-    }
-}
-
-struct DrugLogSheet: View {
-    var body: some View {
-        Text("Drug Log - Coming in Milestone 3")
-            .font(.headline)
-            .padding()
-    }
-}
-
-struct BiometricPlaceholderView: View {
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "heart.text.square")
-                .font(.system(size: 60))
-                .foregroundColor(.red)
-            
-            Text("Biometric Logging")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            Text("Coming in Milestone 5")
-                .foregroundColor(.secondary)
-        }
-        .padding()
-    }
-}
-
-struct PastLogsView: View {
-    var body: some View {
-        Text("Past Logs - Coming in Milestone 4")
-            .font(.headline)
-            .navigationTitle("Past Logs")
-    }
-}
-
-struct DataDisplayView: View {
-    var body: some View {
-        Text("Analytics - Coming in Milestone 5")
-            .font(.headline)
-            .navigationTitle("Analytics")
     }
 }
 
