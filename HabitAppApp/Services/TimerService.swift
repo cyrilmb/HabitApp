@@ -29,7 +29,8 @@ class TimerService: ObservableObject {
         static let startTime = "timer_startTime"
         static let pausedTime = "timer_pausedTime"
         static let accumulatedTime = "timer_accumulatedTime"
-        static let activityJSON = "timer_activityJSON"
+        static let activityCategoryName = "timer_activityCategoryName"
+        static let activityUserId = "timer_activityUserId"
         static let notificationInterval = "timer_notificationInterval"
     }
 
@@ -151,11 +152,8 @@ class TimerService: ObservableObject {
         defaults.set(startTime?.timeIntervalSince1970, forKey: Keys.startTime)
         defaults.set(pausedTime?.timeIntervalSince1970, forKey: Keys.pausedTime)
         defaults.set(accumulatedTime, forKey: Keys.accumulatedTime)
-
-        if let activity = currentActivity,
-           let data = try? JSONEncoder().encode(activity) {
-            defaults.set(data, forKey: Keys.activityJSON)
-        }
+        defaults.set(currentActivity?.categoryName, forKey: Keys.activityCategoryName)
+        defaults.set(currentActivity?.userId, forKey: Keys.activityUserId)
 
         if let interval = notificationInterval {
             defaults.set(interval, forKey: Keys.notificationInterval)
@@ -171,7 +169,8 @@ class TimerService: ObservableObject {
         defaults.removeObject(forKey: Keys.startTime)
         defaults.removeObject(forKey: Keys.pausedTime)
         defaults.removeObject(forKey: Keys.accumulatedTime)
-        defaults.removeObject(forKey: Keys.activityJSON)
+        defaults.removeObject(forKey: Keys.activityCategoryName)
+        defaults.removeObject(forKey: Keys.activityUserId)
         defaults.removeObject(forKey: Keys.notificationInterval)
     }
 
@@ -179,9 +178,8 @@ class TimerService: ObservableObject {
         let defaults = UserDefaults.standard
         guard defaults.bool(forKey: Keys.isRunning) else { return }
 
-        guard let activityData = defaults.data(forKey: Keys.activityJSON),
-              let activity = try? JSONDecoder().decode(Activity.self, from: activityData) else {
-            // Corrupted state — clean up
+        guard let categoryName = defaults.string(forKey: Keys.activityCategoryName),
+              let userId = defaults.string(forKey: Keys.activityUserId) else {
             clearPersistedState()
             return
         }
@@ -192,8 +190,9 @@ class TimerService: ObservableObject {
             return
         }
 
-        currentActivity = activity
-        startTime = Date(timeIntervalSince1970: savedStartTime)
+        let restoredStart = Date(timeIntervalSince1970: savedStartTime)
+        currentActivity = Activity(userId: userId, categoryName: categoryName, startTime: restoredStart)
+        startTime = restoredStart
         accumulatedTime = defaults.double(forKey: Keys.accumulatedTime)
         isRunning = true
 
