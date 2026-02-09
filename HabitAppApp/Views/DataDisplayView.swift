@@ -15,6 +15,10 @@ struct DataDisplayView: View {
     @State private var selectedCategory: AnalyticsCategory = .activities
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var selectedActivityName: String?
+    @State private var selectedPieActivity: String?
+    @State private var selectedSubstanceName: String?
+    @State private var selectedMoodQuadrant: String?
+    @State private var trendFilterActivity: String = "All"
     
     var body: some View {
         ScrollView {
@@ -91,107 +95,86 @@ struct DataDisplayView: View {
         }
     }
     
+    // MARK: - X-Axis Helpers
+
+    /// Stride component for date-based chart x-axes, adapting to the selected time range.
+    private var xAxisStride: Calendar.Component {
+        switch selectedTimeRange {
+        case .day:       return .hour
+        case .week:      return .day
+        case .month:     return .weekOfYear
+        case .sixMonths: return .month
+        case .year:      return .month
+        case .all:       return .quarter
+        }
+    }
+
+    /// Date format for x-axis labels, adapting to the selected time range.
+    private var xAxisDateFormat: Date.FormatStyle {
+        switch selectedTimeRange {
+        case .day:       return .dateTime.hour()
+        case .week:      return .dateTime.weekday(.abbreviated)
+        case .month:     return .dateTime.month(.abbreviated).day()
+        case .sixMonths: return .dateTime.month(.abbreviated)
+        case .year:      return .dateTime.month(.abbreviated)
+        case .all:       return .dateTime.month(.abbreviated).year(.twoDigits)
+        }
+    }
+
     // MARK: - Period Navigation Helpers
 
-    /// Move selectedDate forward or backward by one unit of the current range.
+    /// The latest allowed anchor date for the current range (today for all ranges).
+    private var latestAnchor: Date {
+        Calendar.current.startOfDay(for: Date())
+    }
+
+    /// Move selectedDate (the anchor / last day of the window) by one window-width.
     private func shiftPeriod(by direction: Int) {
         let cal = Calendar.current
-        let component: Calendar.Component
-        switch selectedTimeRange {
-        case .day:   component = .day
-        case .week:  component = .weekOfYear
-        case .month: component = .month
-        case .year:  component = .year
-        case .all:   return   // navigator is hidden for All Time
-        }
-        guard let newDate = cal.date(byAdding: component, value: direction, to: selectedDate) else { return }
-        // Never allow stepping into a period that starts in the future
-        if newDate <= cal.startOfDay(for: Date()) {
+        guard let days = selectedTimeRange.dayCount else { return }
+        guard let newDate = cal.date(byAdding: .day, value: direction * days, to: selectedDate) else { return }
+        if newDate <= latestAnchor {
             selectedDate = newDate
         }
     }
 
-    /// True when the current period already includes today — right chevron should be disabled.
+    /// True when the window is at the most recent allowed position.
     private var isPeriodAtPresent: Bool {
-        let cal  = Calendar.current
-        let now  = Date()
-        switch selectedTimeRange {
-        case .day:
-            return cal.isDateInToday(selectedDate)
-        case .week:
-            // "this week" = the week that contains today
-            return cal.component(.weekOfYear, from: selectedDate) == cal.component(.weekOfYear, from: now)
-                && cal.component(.yearForWeekOfYear, from: selectedDate) == cal.component(.yearForWeekOfYear, from: now)
-        case .month:
-            return cal.component(.month, from: selectedDate) == cal.component(.month, from: now)
-                && cal.component(.year,  from: selectedDate) == cal.component(.year,  from: now)
-        case .year:
-            return cal.component(.year, from: selectedDate) == cal.component(.year, from: now)
-        case .all:
-            return true
-        }
+        if selectedTimeRange == .all { return true }
+        return selectedDate >= latestAnchor
     }
+
+    private static let dayHeaderFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "EEEE, MMM d"; return f
+    }()
+    private static let rangeHeaderFormatter: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MMM d"; return f
+    }()
 
     /// Human-readable header for the current period.
     private var periodHeader: String {
         let cal = Calendar.current
-        let now = Date()
-        switch selectedTimeRange {
-        case .day:
-            if cal.isDateInToday(selectedDate)     { return "Today" }
+        guard let days = selectedTimeRange.dayCount else { return "All Time" }
+
+        if days == 1 {
+            if cal.isDateInToday(selectedDate) { return "Today" }
             if cal.isDateInYesterday(selectedDate) { return "Yesterday" }
-            let f = DateFormatter(); f.dateFormat = "EEEE, MMM d"
-            return f.string(from: selectedDate)
-
-        case .week:
-            // Show the Monday (or Sunday, respecting locale) of the week
-            let weekStart = cal.date(from: cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate))!
-            let weekEnd   = cal.date(byAdding: .day, value: 6, to: weekStart)!
-            if cal.component(.weekOfYear, from: weekStart) == cal.component(.weekOfYear, from: now)
-                && cal.component(.yearForWeekOfYear, from: weekStart) == cal.component(.yearForWeekOfYear, from: now) {
-                return "This Week"
-            }
-            let f = DateFormatter(); f.dateFormat = "MMM d"
-            return "Week of \(f.string(from: weekStart)) – \(f.string(from: weekEnd))"
-
-        case .month:
-            let f = DateFormatter(); f.dateFormat = "MMMM yyyy"
-            if cal.component(.month, from: selectedDate) == cal.component(.month, from: now)
-                && cal.component(.year,  from: selectedDate) == cal.component(.year,  from: now) {
-                return "This Month"
-            }
-            return f.string(from: selectedDate)
-
-        case .year:
-            let y = cal.component(.year, from: selectedDate)
-            return y == cal.component(.year, from: now) ? "This Year" : "\(y)"
-
-        case .all:
-            return "All Time"
+            return Self.dayHeaderFormatter.string(from: selectedDate)
         }
+
+        let f = Self.rangeHeaderFormatter
+        if selectedDate >= latestAnchor {
+            let rangeStart = cal.date(byAdding: .day, value: -(days - 1), to: latestAnchor) ?? latestAnchor
+            return "\(f.string(from: rangeStart)) – \(f.string(from: latestAnchor))"
+        }
+
+        let rangeStart = cal.date(byAdding: .day, value: -(days - 1), to: selectedDate) ?? selectedDate
+        return "\(f.string(from: rangeStart)) – \(f.string(from: selectedDate))"
     }
-    
-    /// Canonical anchor for a given range — used when the user switches segments
-    /// so that stepping always works from a clean boundary.
+
+    /// Canonical anchor for a given range (today for all ranges).
     private func anchorDate(for range: TimeRange) -> Date {
-        let cal = Calendar.current
-        let now = Date()
-        switch range {
-        case .day:
-            return cal.startOfDay(for: now)
-        case .week:
-            // Start of the current week (locale-aware)
-            let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)
-            return cal.date(from: comps) ?? cal.startOfDay(for: now)
-        case .month:
-            let comps = cal.dateComponents([.year, .month], from: now)
-            return cal.date(from: comps) ?? cal.startOfDay(for: now)
-        case .year:
-            let comps = cal.dateComponents([.year], from: now)
-            return cal.date(from: comps) ?? cal.startOfDay(for: now)
-        case .all:
-            return now
-        }
+        Calendar.current.startOfDay(for: Date())
     }
     
     private var activityAnalytics: some View {
@@ -229,7 +212,7 @@ struct DataDisplayView: View {
                             }
                         }
                     }
-                    .chartAngleSelection(value: $selectedActivityName)
+                    .chartXSelection(value: $selectedActivityName)
                     .overlay(alignment: .topTrailing) {
                         if let name = selectedActivityName,
                            let item = viewModel.activityTimeData.first(where: { $0.name == name }) {
@@ -240,6 +223,9 @@ struct DataDisplayView: View {
                                 Text(String(format: "%.1fh", item.hours))
                                     .font(.title3)
                                     .fontWeight(.bold)
+                                Text("\(item.count) session\(item.count == 1 ? "" : "s")")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
                             }
                             .padding(8)
                             .background(Color(.systemBackground))
@@ -260,31 +246,86 @@ struct DataDisplayView: View {
                             innerRadius: .ratio(0.5),
                             angularInset: 2
                         )
-                        .foregroundStyle(by: .value("Activity", item.name))
+                        .foregroundStyle(Color(hex: item.colorHex) ?? .blue)
+                        .opacity(selectedPieActivity == nil || selectedPieActivity == item.name ? 1.0 : 0.4)
                         .cornerRadius(4)
                     }
                     .frame(height: 250)
+                    .chartAngleSelection(value: $selectedPieActivity)
+                    .chartLegend(.hidden)
+                    .overlay {
+                        if let name = selectedPieActivity,
+                           let item = viewModel.activityTimeData.first(where: { $0.name == name }) {
+                            let total = viewModel.activityTimeData.reduce(0.0) { $0 + $1.hours }
+                            let pct = total > 0 ? (item.hours / total) * 100 : 0
+                            VStack(spacing: 2) {
+                                Text(name)
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                Text(String(format: "%.1fh", item.hours))
+                                    .font(.title3)
+                                    .fontWeight(.bold)
+                                Text("\(item.count) sessions")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                Text(String(format: "%.0f%%", pct))
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    FlowLayout(spacing: 8) {
+                        ForEach(viewModel.activityTimeData) { item in
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(Color(hex: item.colorHex) ?? .blue)
+                                    .frame(width: 10, height: 10)
+                                Text(item.name)
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                    .padding(.top, 4)
                 }
             }
-            
+
             // Time Trend (Line Chart)
             if !viewModel.activityTrendData.isEmpty {
                 ChartCard(title: "Activity Trend") {
-                    Chart(viewModel.activityTrendData) { item in
+                    // Activity filter pills
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(["All"] + viewModel.activityTimeData.map(\.name), id: \.self) { name in
+                                Button(name) {
+                                    trendFilterActivity = name
+                                }
+                                .font(.subheadline)
+                                .fontWeight(trendFilterActivity == name ? .bold : .regular)
+                                .foregroundColor(trendFilterActivity == name ? .white : .primary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .background(trendFilterActivity == name ? Color.blue : Color(.systemGray5))
+                                .clipShape(Capsule())
+                            }
+                        }
+                    }
+
+                    Chart(filteredTrendData) { item in
                         LineMark(
                             x: .value("Date", item.date),
                             y: .value("Minutes", item.minutes)
                         )
-                        .foregroundStyle(Color.blue.gradient)
+                        .foregroundStyle(trendLineColor(for: item.categoryName))
                         .interpolationMethod(.catmullRom)
-                        
+
                         AreaMark(
                             x: .value("Date", item.date),
                             y: .value("Minutes", item.minutes)
                         )
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [Color.blue.opacity(0.3), Color.blue.opacity(0.0)],
+                                colors: [trendLineColor(for: item.categoryName).opacity(0.3), trendLineColor(for: item.categoryName).opacity(0.0)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -293,8 +334,9 @@ struct DataDisplayView: View {
                     }
                     .frame(height: 200)
                     .chartXAxis {
-                        AxisMarks(values: .stride(by: .day)) { _ in
-                            AxisValueLabel(format: .dateTime.month().day())
+                        AxisMarks(values: .stride(by: xAxisStride)) { _ in
+                            AxisValueLabel(format: xAxisDateFormat)
+                                .font(.caption2)
                         }
                     }
                 }
@@ -352,11 +394,33 @@ struct DataDisplayView: View {
                         .cornerRadius(8)
                     }
                     .frame(height: 250)
+                    .chartXSelection(value: $selectedSubstanceName)
+                    .overlay(alignment: .topTrailing) {
+                        if let name = selectedSubstanceName,
+                           let item = viewModel.filteredSubstanceCountData.first(where: { $0.name == name }) {
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Text(name)
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                Text("\(item.count)")
+                                    .font(.title3)
+                                    .fontWeight(.bold)
+                                Text(item.count == 1 ? "log" : "logs")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(8)
+                            .background(Color(.systemBackground))
+                            .cornerRadius(8)
+                            .shadow(radius: 3)
+                            .padding(8)
+                        }
+                    }
                 }
             }
-            
+
             // Trend line (filtered)
-            if !viewModel.filteredSubstanceTrendData.isEmpty && selectedTimeRange != .day {
+            if !viewModel.filteredSubstanceTrendData.isEmpty {
                 ChartCard(title: "Usage Trend") {
                     Chart(viewModel.filteredSubstanceTrendData) { item in
                         LineMark(
@@ -381,8 +445,9 @@ struct DataDisplayView: View {
                     }
                     .frame(height: 200)
                     .chartXAxis {
-                        AxisMarks(values: .stride(by: .day)) { _ in
-                            AxisValueLabel(format: .dateTime.month().day())
+                        AxisMarks(values: .stride(by: xAxisStride)) { _ in
+                            AxisValueLabel(format: xAxisDateFormat)
+                                .font(.caption2)
                         }
                     }
                 }
@@ -517,8 +582,9 @@ struct DataDisplayView: View {
                     .frame(height: 200)
                     .chartYScale(domain: .automatic(includesZero: false))
                     .chartXAxis {
-                        AxisMarks(values: .stride(by: .day)) { _ in
-                            AxisValueLabel(format: .dateTime.month().day())
+                        AxisMarks(values: .stride(by: xAxisStride)) { _ in
+                            AxisValueLabel(format: xAxisDateFormat)
+                                .font(.caption2)
                         }
                     }
                 }
@@ -537,8 +603,9 @@ struct DataDisplayView: View {
                     }
                     .frame(height: 200)
                     .chartXAxis {
-                        AxisMarks(values: .stride(by: .day)) { _ in
-                            AxisValueLabel(format: .dateTime.month().day())
+                        AxisMarks(values: .stride(by: xAxisStride)) { _ in
+                            AxisValueLabel(format: xAxisDateFormat)
+                                .font(.caption2)
                         }
                     }
                 }
@@ -546,6 +613,11 @@ struct DataDisplayView: View {
             
             // Bed & Wake Time chart
             if !viewModel.bedWakeTimeData.isEmpty {
+                let hours = viewModel.bedWakeTimeData.map(\.hour)
+                let domainMin = floor((hours.min() ?? 20) / 2.0) * 2.0 - 2.0
+                let domainMax = ceil((hours.max() ?? 34) / 2.0) * 2.0 + 2.0
+                let yAxisValues = Array(stride(from: Int(domainMin), through: Int(domainMax), by: 2))
+
                 ChartCard(title: "Bed & Wake Times") {
                     Chart(viewModel.bedWakeTimeData) { item in
                         LineMark(
@@ -557,20 +629,21 @@ struct DataDisplayView: View {
                         .lineStyle(StrokeStyle(lineWidth: 2))
                     }
                     .frame(height: 250)
-                    .chartYScale(domain: 18...32)
+                    .chartYScale(domain: domainMin...domainMax)
                     .chartYAxis {
-                        AxisMarks(values: [18, 20, 22, 24, 26, 28, 30, 32]) { value in
+                        AxisMarks(values: yAxisValues) { value in
                             AxisValueLabel {
                                 let h = value.as(Int.self) ?? 0
                                 let wrapped = h % 24
                                 Text(wrapped == 0 ? "12 AM" : wrapped < 12 ? "\(wrapped) AM" : wrapped == 12 ? "12 PM" : "\(wrapped - 12) PM")
                                     .font(.caption2)
                             }
+                            AxisGridLine()
                         }
                     }
                     .chartXAxis {
-                        AxisMarks(values: .stride(by: .day)) { _ in
-                            AxisValueLabel(format: .dateTime.month().day())
+                        AxisMarks(values: .stride(by: xAxisStride)) { _ in
+                            AxisValueLabel(format: xAxisDateFormat)
                                 .font(.caption2)
                         }
                     }
@@ -651,8 +724,9 @@ struct DataDisplayView: View {
                         ])
                         .chartLegend(position: .bottom)
                         .chartXAxis {
-                            AxisMarks(values: .stride(by: .day)) { _ in
-                                AxisValueLabel(format: .dateTime.month().day())
+                            AxisMarks(values: .stride(by: xAxisStride)) { _ in
+                                AxisValueLabel(format: xAxisDateFormat)
+                                    .font(.caption2)
                             }
                         }
                     }
@@ -668,22 +742,46 @@ struct DataDisplayView: View {
                                 angularInset: 2
                             )
                             .foregroundStyle(Color(hex: item.color) ?? .gray)
+                            .opacity(selectedMoodQuadrant == nil || selectedMoodQuadrant == item.quadrant ? 1.0 : 0.4)
                             .cornerRadius(4)
                         }
                         .frame(height: 250)
-                        .chartLegend(position: .bottom) {
-                            FlowLayout(spacing: 8) {
-                                ForEach(viewModel.moodQuadrantData) { item in
-                                    HStack(spacing: 4) {
-                                        Circle()
-                                            .fill(Color(hex: item.color) ?? .gray)
-                                            .frame(width: 10, height: 10)
-                                        Text(item.quadrant.replacingOccurrences(of: "\n", with: " "))
-                                            .font(.caption)
-                                    }
+                        .chartAngleSelection(value: $selectedMoodQuadrant)
+                        .chartLegend(.hidden)
+                        .overlay {
+                            if let quadrant = selectedMoodQuadrant,
+                               let item = viewModel.moodQuadrantData.first(where: { $0.quadrant == quadrant }) {
+                                let total = viewModel.moodQuadrantData.reduce(0) { $0 + $1.count }
+                                let pct = total > 0 ? (Double(item.count) / Double(total)) * 100 : 0
+                                VStack(spacing: 2) {
+                                    Text(quadrant.replacingOccurrences(of: "\n", with: " "))
+                                        .font(.caption)
+                                        .fontWeight(.semibold)
+                                    Text("\(item.count)")
+                                        .font(.title3)
+                                        .fontWeight(.bold)
+                                    Text(item.count == 1 ? "entry" : "entries")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Text(String(format: "%.0f%%", pct))
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
                                 }
                             }
                         }
+
+                        FlowLayout(spacing: 8) {
+                            ForEach(viewModel.moodQuadrantData) { item in
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(Color(hex: item.color) ?? .gray)
+                                        .frame(width: 10, height: 10)
+                                    Text(item.quadrant.replacingOccurrences(of: "\n", with: " "))
+                                        .font(.caption)
+                                }
+                            }
+                        }
+                        .padding(.top, 4)
                     }
                 }
             }
@@ -761,11 +859,32 @@ struct DataDisplayView: View {
         .padding(.horizontal)
     }
 
+    // MARK: - Activity Trend Helpers
+
+    private var filteredTrendData: [TrendData] {
+        let data = viewModel.activityTrendData
+        if trendFilterActivity == "All" {
+            // Aggregate all activities per day
+            let byDate = Dictionary(grouping: data) { $0.date }
+            return byDate.map { date, items in
+                TrendData(date: date, minutes: items.reduce(0) { $0 + $1.minutes }, categoryName: "All")
+            }.sorted { $0.date < $1.date }
+        }
+        return data.filter { $0.categoryName == trendFilterActivity }
+    }
+
+    private func trendLineColor(for categoryName: String) -> Color {
+        if let item = viewModel.activityTimeData.first(where: { $0.name == categoryName }) {
+            return Color(hex: item.colorHex) ?? .blue
+        }
+        return .blue
+    }
+
     private func moodPointColor(p: Double, e: Double) -> Color {
-        if p >= 0 && e >= 0 { return .green }
-        if p < 0 && e >= 0 { return .red }
-        if p >= 0 && e < 0 { return .blue }
-        return .gray
+        if p >= 0 && e >= 0 { return .yellow }   // High energy + Pleasant (Yale yellow)
+        if p < 0 && e >= 0 { return .red }        // High energy + Unpleasant (Yale red)
+        if p >= 0 && e < 0 { return .green }       // Low energy + Pleasant (Yale green)
+        return .blue                                // Low energy + Unpleasant (Yale blue)
     }
 
     // MARK: - Empty State

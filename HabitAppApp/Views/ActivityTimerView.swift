@@ -11,9 +11,8 @@ struct ActivityTimerView: View {
     let activity: Activity
     var notificationInterval: TimeInterval? = nil
 
-    @StateObject private var timerService = TimerService.shared
+    @ObservedObject private var timerService = TimerService.shared
     @Environment(\.dismiss) var dismiss
-    @Environment(\.scenePhase) var scenePhase
     
     @State private var completedActivity: Activity?
     @State private var showCancelAlert = false
@@ -207,8 +206,9 @@ struct ActivityTimerView: View {
                     if activityWasSaved {
                         print("✅ Completion closed after save - dismissing timer and showing toast")
                         dismiss()  // Close timer sheet
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            SheetManager.shared.showToastOnly()  // Show toast
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 500_000_000)
+                            SheetManager.shared.showToastOnly()
                         }
                         activityWasSaved = false
                     } else if activityWasDiscarded {
@@ -219,9 +219,7 @@ struct ActivityTimerView: View {
                 }
             }
         }
-        .onChange(of: scenePhase) { oldPhase, newPhase in
-            handleScenePhaseChange(newPhase)
-        }
+        // Scene phase handling is done at app level in HabitTrackerApp
     }
     
     // MARK: - Timer Controls
@@ -254,25 +252,6 @@ struct ActivityTimerView: View {
         dismiss()
     }
     
-    // MARK: - Background Handling
-    
-    private func handleScenePhaseChange(_ phase: ScenePhase) {
-        switch phase {
-        case .background:
-            if timerService.isRunning {
-                print("App backgrounded - timer continues running")
-                timerService.scheduleBackgroundNotification()
-            }
-        case .active:
-            timerService.cancelBackgroundNotification()
-            timerService.recalculateElapsedTime()
-            print("App active - timer recalculated and resumed")
-        case .inactive:
-            break
-        @unknown default:
-            break
-        }
-    }
 }
 
 #Preview {

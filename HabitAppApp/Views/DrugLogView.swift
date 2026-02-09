@@ -283,7 +283,9 @@ struct DrugMethodSelectionView: View {
             AddMethodView(category: category)
         }
         .sheet(isPresented: $showEditMethods, onDismiss: reloadCategory) {
-            EditMethodsView(category: category)
+            EditMethodsView(category: category) {
+                dismiss()
+            }
         }
         .navigationDestination(isPresented: $showDosageEntry) {
             if let method = selectedMethod {
@@ -693,22 +695,18 @@ class DrugLogViewModel: ObservableObject {
     
     func loadCategories() {
         isLoading = true
-        
-        Task {
+
+        Task { [weak self] in
             do {
                 let loadedCategories = try await FirebaseService.shared.fetchDrugCategories()
-                await MainActor.run {
-                    self.categories = loadedCategories
-                    self.isLoading = false
-                    
-                    if self.categories.isEmpty {
-                        self.createDefaultCategories()
-                    }
+                await MainActor.run { [weak self] in
+                    self?.categories = loadedCategories
+                    self?.isLoading = false
                 }
             } catch {
                 print("Error loading drug categories: \(error)")
-                await MainActor.run {
-                    self.isLoading = false
+                await MainActor.run { [weak self] in
+                    self?.isLoading = false
                 }
             }
         }
@@ -725,27 +723,6 @@ class DrugLogViewModel: ObservableObject {
             }
         }
     }
-    
-    private func createDefaultCategories() {
-        let userId = FirebaseService.shared.userId
-        let defaults = [
-            DrugCategory.alcoholCategory(userId: userId),
-            DrugCategory.cannabisCategory(userId: userId)
-        ]
-        
-        Task {
-            for category in defaults {
-                do {
-                    try await FirebaseService.shared.saveDrugCategory(category)
-                    await MainActor.run {
-                        self.categories.append(category)
-                    }
-                } catch {
-                    print("Error creating default category: \(error)")
-                }
-            }
-        }
-    }
 }
 
 #Preview {
@@ -756,37 +733,83 @@ class DrugLogViewModel: ObservableObject {
 
 struct EditMethodsView: View {
     let category: DrugCategory
-    
+    let onDeleted: (() -> Void)?
+
     @Environment(\.dismiss) var dismiss
+    @State private var categoryName: String
+    @State private var dosageUnit: String
     @State private var methods: [String]
     @State private var isSaving = false
-    
-    init(category: DrugCategory) {
+    @State private var showDeleteAlert = false
+    @State private var isDeleting = false
+
+    init(category: DrugCategory, onDeleted: (() -> Void)? = nil) {
         self.category = category
+        self.onDeleted = onDeleted
+        self._categoryName = State(initialValue: category.name)
+        self._dosageUnit = State(initialValue: category.defaultDosageUnit ?? "")
         self._methods = State(initialValue: category.methods)
     }
-    
+
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(methods.indices, id: \.self) { index in
-                    HStack {
-                        TextField("Method name", text: $methods[index])
-                            .autocapitalization(.words)
-                        
-                        Button(action: { methods.remove(at: index) }) {
-                            Image(systemName: "minus.circle.fill")
-                                .foregroundColor(.red)
+            Form {
+                Section {
+                    TextField("Substance Name", text: $categoryName)
+                        .autocapitalization(.words)
+                } header: {
+                    Text("Name")
+                }
+
+                Section {
+                    TextField("Unit (optional)", text: $dosageUnit)
+                } header: {
+                    Text("Dosage Unit")
+                } footer: {
+                    Text("e.g., drinks, mg, oz")
+                }
+
+                Section {
+                    ForEach(methods.indices, id: \.self) { index in
+                        HStack {
+                            TextField("Method name", text: $methods[index])
+                                .autocapitalization(.words)
+
+                            if methods.count > 1 {
+                                Button(action: { methods.remove(at: index) }) {
+                                    Image(systemName: "minus.circle.fill")
+                                        .foregroundColor(.red)
+                                }
+                            }
                         }
                     }
+
+                    Button(action: { methods.append("") }) {
+                        Label("Add Method", systemImage: "plus.circle.fill")
+                            .foregroundColor(.green)
+                    }
+                } header: {
+                    Text("Methods")
                 }
-                
-                Button(action: { methods.append("") }) {
-                    Label("Add Method", systemImage: "plus.circle.fill")
-                        .foregroundColor(.green)
+
+                Section {
+                    Button(role: .destructive, action: { showDeleteAlert = true }) {
+                        HStack {
+                            Spacer()
+                            if isDeleting {
+                                ProgressView()
+                            } else {
+                                Text("Delete Substance")
+                            }
+                            Spacer()
+                        }
+                    }
+                    .disabled(isDeleting)
+                } header: {
+                    Text("Danger Zone")
                 }
             }
-            .navigationTitle("Edit Methods")
+            .navigationTitle("Edit Substance")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -796,18 +819,28 @@ struct EditMethodsView: View {
                     Button("Save") {
                         saveChanges()
                     }
-                    .disabled(isSaving || methods.filter { !$0.isEmpty }.isEmpty)
+                    .disabled(isSaving || categoryName.isEmpty || methods.filter({ !$0.isEmpty }).isEmpty)
                 }
+            }
+            .alert("Delete Substance?", isPresented: $showDeleteAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    deleteCategory()
+                }
+            } message: {
+                Text("This will permanently delete \(category.name). Past logs will be kept.")
             }
         }
     }
-    
+
     private func saveChanges() {
         isSaving = true
-        
+
         var updatedCategory = category
+        updatedCategory.name = categoryName
+        updatedCategory.defaultDosageUnit = dosageUnit.isEmpty ? nil : dosageUnit
         updatedCategory.methods = methods.filter { !$0.isEmpty }
-        
+
         Task {
             do {
                 try await FirebaseService.shared.saveDrugCategory(updatedCategory)
@@ -818,6 +851,28 @@ struct EditMethodsView: View {
                 print("Error saving methods: \(error)")
                 await MainActor.run {
                     isSaving = false
+                }
+            }
+        }
+    }
+
+    private func deleteCategory() {
+        isDeleting = true
+
+        Task {
+            do {
+                if let categoryId = category.id {
+                    try await FirebaseService.shared.deleteDrugCategory(categoryId)
+                }
+                await MainActor.run {
+                    isDeleting = false
+                    onDeleted?()
+                    dismiss()
+                }
+            } catch {
+                print("Error deleting category: \(error)")
+                await MainActor.run {
+                    isDeleting = false
                 }
             }
         }

@@ -156,35 +156,35 @@ struct PastLogsView: View {
     // MARK: - Actions
     
     private func editLog(_ logItem: LogItem) {
-        switch logItem.type {
-        case .activity:
-            selectedActivityToEdit = logItem.activity
-        case .drugLog:
-            selectedDrugLogToEdit = logItem.drugLog
-        case .biometric:
-            selectedBiometricToEdit = logItem.biometric
+        switch logItem.content {
+        case .activity(let a):
+            selectedActivityToEdit = a
+        case .drugLog(let d):
+            selectedDrugLogToEdit = d
+        case .biometric(let b):
+            selectedBiometricToEdit = b
         }
     }
-    
+
     private func deleteLog(_ logItem: LogItem) {
-        switch logItem.type {
-        case .activity:
-            if let activity = logItem.activity {
-                viewModel.deleteActivity(activity)
-            }
-        case .drugLog:
-            if let drugLog = logItem.drugLog {
-                viewModel.deleteDrugLog(drugLog)
-            }
-        case .biometric:
-            if let biometric = logItem.biometric {
-                viewModel.deleteBiometric(biometric)
-            }
+        switch logItem.content {
+        case .activity(let a):
+            viewModel.deleteActivity(a)
+        case .drugLog(let d):
+            viewModel.deleteDrugLog(d)
+        case .biometric(let b):
+            viewModel.deleteBiometric(b)
         }
     }
     
     // MARK: - Formatters
-    
+
+    private static let sectionDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        return f
+    }()
+
     private func formatSectionHeader(_ date: Date) -> String {
         let calendar = Calendar.current
         if calendar.isDateInToday(date) {
@@ -192,9 +192,7 @@ struct PastLogsView: View {
         } else if calendar.isDateInYesterday(date) {
             return "Yesterday"
         } else {
-            let formatter = DateFormatter()
-            formatter.dateStyle = .medium
-            return formatter.string(from: date)
+            return Self.sectionDateFormatter.string(from: date)
         }
     }
 }
@@ -225,43 +223,58 @@ enum LogFilter: String, CaseIterable {
 
 struct LogItem: Identifiable {
     let id: String
-    let type: LogType
     let date: Date
-    let activity: Activity?
-    let drugLog: DrugLog?
-    let biometric: Biometric?
-    
-    enum LogType {
-        case activity
-        case drugLog
-        case biometric
+    let content: Content
+
+    enum Content {
+        case activity(Activity)
+        case drugLog(DrugLog)
+        case biometric(Biometric)
     }
-    
+
+    // Convenience accessors for backwards compatibility
+    var activity: Activity? {
+        if case .activity(let a) = content { return a }
+        return nil
+    }
+    var drugLog: DrugLog? {
+        if case .drugLog(let d) = content { return d }
+        return nil
+    }
+    var biometric: Biometric? {
+        if case .biometric(let b) = content { return b }
+        return nil
+    }
+
     init(activity: Activity) {
         self.id = activity.id ?? UUID().uuidString
-        self.type = .activity
         self.date = activity.startTime
-        self.activity = activity
-        self.drugLog = nil
-        self.biometric = nil
+        self.content = .activity(activity)
     }
-    
+
     init(drugLog: DrugLog) {
         self.id = drugLog.id ?? UUID().uuidString
-        self.type = .drugLog
         self.date = drugLog.timestamp
-        self.activity = nil
-        self.drugLog = drugLog
-        self.biometric = nil
+        self.content = .drugLog(drugLog)
     }
-    
+
     init(biometric: Biometric) {
         self.id = biometric.id ?? UUID().uuidString
-        self.type = .biometric
         self.date = biometric.timestamp
-        self.activity = nil
-        self.drugLog = nil
-        self.biometric = biometric
+        self.content = .biometric(biometric)
+    }
+
+    /// The date used for section grouping. Bed times between midnight and 6 AM
+    /// are shifted to the previous day so they appear with that evening's logs.
+    var groupDate: Date {
+        if case .biometric(let b) = content, b.type == .bedTime {
+            let calendar = Calendar.current
+            let hour = calendar.component(.hour, from: date)
+            if hour >= 0 && hour < 6 {
+                return calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: date)) ?? date
+            }
+        }
+        return date
     }
 }
 
@@ -322,99 +335,79 @@ struct LogRowView: View {
     }
     
     private var isBedOrWake: Bool {
-        guard let b = logItem.biometric else { return false }
-        return b.type == .bedTime || b.type == .wakeTime
+        if case .biometric(let b) = logItem.content {
+            return b.type == .bedTime || b.type == .wakeTime
+        }
+        return false
     }
     
     private var title: String {
-        switch logItem.type {
-        case .activity:
-            return logItem.activity?.categoryName ?? "Activity"
-        case .drugLog:
-            return logItem.drugLog?.categoryName ?? "Substance"
-        case .biometric:
-            return logItem.biometric?.type.rawValue ?? "Biometric"
+        switch logItem.content {
+        case .activity(let a): return a.categoryName
+        case .drugLog(let d): return d.categoryName
+        case .biometric(let b): return b.type.rawValue
         }
     }
-    
+
     private var subtitle: String {
-        switch logItem.type {
-        case .activity:
-            return "Activity"
-        case .drugLog:
-            if let method = logItem.drugLog?.method {
-                return method
-            }
-            return "Substance"
-        case .biometric:
-            return "Biometric"
+        switch logItem.content {
+        case .activity: return "Activity"
+        case .drugLog(let d): return d.method
+        case .biometric: return "Biometric"
         }
     }
-    
+
     private var iconName: String {
-        switch logItem.type {
-        case .activity:
-            return "timer"
-        case .drugLog:
-            return "pill.fill"
-        case .biometric:
-            return logItem.biometric?.type.icon ?? "heart.text.square"
+        switch logItem.content {
+        case .activity: return "timer"
+        case .drugLog: return "pill.fill"
+        case .biometric(let b): return b.type.icon
         }
     }
-    
+
     private var iconColor: Color {
-        switch logItem.type {
-        case .activity:
-            return .blue
-        case .drugLog:
-            return .purple
-        case .biometric:
-            return .red
+        switch logItem.content {
+        case .activity: return .blue
+        case .drugLog: return .purple
+        case .biometric: return .red
         }
     }
     
     private var detailText: String? {
-        switch logItem.type {
-        case .activity:
-            return logItem.activity?.formattedDuration
-        case .drugLog:
-            if let dosage = logItem.drugLog?.dosage,
-               let unit = logItem.drugLog?.dosageUnit {
+        switch logItem.content {
+        case .activity(let a):
+            return a.formattedDuration
+        case .drugLog(let d):
+            if let dosage = d.dosage, let unit = d.dosageUnit {
                 return "\(String(format: "%.1f", dosage)) \(unit)"
             }
             return nil
-        case .biometric:
-            if let biometric = logItem.biometric {
-                if biometric.type == .mood {
-                    return nearestEmotionLabel(
-                        pleasantness: biometric.value,
-                        energy: biometric.secondaryValue ?? 0
-                    )
-                } else if biometric.type == .bedTime || biometric.type == .wakeTime {
-                    // Use timestamp (the DatePicker value).  Fall back to
-                    // createdAt when timestamp is exactly midnight — that
-                    // pattern means an older save wrote startOfDay instead of
-                    // the picker value.
-                    let cal = Calendar.current
-                    let comps = cal.dateComponents([.hour, .minute, .second], from: biometric.timestamp)
-                    let isMidnight = (comps.hour == 0 && comps.minute == 0 && comps.second == 0)
-                    let displayDate = isMidnight ? biometric.createdAt : biometric.timestamp
-
-                    let formatter = DateFormatter()
-                    formatter.timeStyle = .short
-                    return formatter.string(from: displayDate)
-                } else {
-                    return "\(String(format: "%.1f", biometric.value)) \(biometric.unit)"
-                }
+        case .biometric(let b):
+            if b.type == .mood {
+                return nearestEmotionLabel(
+                    pleasantness: b.value,
+                    energy: b.secondaryValue ?? 0
+                )
+            } else if b.type == .bedTime || b.type == .wakeTime {
+                let cal = Calendar.current
+                let comps = cal.dateComponents([.hour, .minute, .second], from: b.timestamp)
+                let isMidnight = (comps.hour == 0 && comps.minute == 0 && comps.second == 0)
+                let displayDate = isMidnight ? b.createdAt : b.timestamp
+                return Self.timeFormatter.string(from: displayDate)
+            } else {
+                return "\(String(format: "%.1f", b.value)) \(b.unit)"
             }
-            return nil
         }
     }
     
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.timeStyle = .short
+        return f
+    }()
+
     private func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
+        Self.timeFormatter.string(from: date)
     }
 }
 
@@ -446,15 +439,17 @@ class PastLogsViewModel: ObservableObject {
         lastDrugLogDate = nil
         lastBiometricDate = nil
 
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             do {
-                async let activities = FirebaseService.shared.fetchActivities(limit: pageSize)
-                async let drugLogs = FirebaseService.shared.fetchDrugLogs(limit: pageSize)
-                async let biometrics = FirebaseService.shared.fetchBiometrics(limit: pageSize)
+                async let activities = FirebaseService.shared.fetchActivities(limit: self.pageSize)
+                async let drugLogs = FirebaseService.shared.fetchDrugLogs(limit: self.pageSize)
+                async let biometrics = FirebaseService.shared.fetchBiometrics(limit: self.pageSize)
 
                 let (loadedActivities, loadedDrugLogs, loadedBiometrics) = try await (activities, drugLogs, biometrics)
 
-                await MainActor.run {
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
                     let activityItems = loadedActivities.map { LogItem(activity: $0) }
                     let drugLogItems = loadedDrugLogs.map { LogItem(drugLog: $0) }
                     let biometricItems = loadedBiometrics.map { LogItem(biometric: $0) }
@@ -471,7 +466,7 @@ class PastLogsViewModel: ObservableObject {
                 }
             } catch {
                 print("Error loading logs: \(error)")
-                await MainActor.run { self.isLoading = false }
+                await MainActor.run { [weak self] in self?.isLoading = false }
             }
         }
     }
@@ -480,36 +475,45 @@ class PastLogsViewModel: ObservableObject {
         guard hasMoreLogs, !isLoading else { return }
         isLoading = true
 
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             do {
-                // Fetch next page using cursor dates and limit+1 to detect more
-                // We fetch items OLDER than the last seen date by using a "before" approach:
-                // Since our queries order descending, we need items with dates before our cursors.
-                // The `since` parameter uses >=, so we pass nil and handle with limit offset.
-                // Instead, we fetch all from beginning with increased limit.
-                let currentCount = allLogs.count
-                let nextLimit = currentCount + pageSize
+                var newActivities: [Activity] = []
+                var newDrugLogs: [DrugLog] = []
+                var newBiometrics: [Biometric] = []
 
-                async let activities = FirebaseService.shared.fetchActivities(limit: nextLimit)
-                async let drugLogs = FirebaseService.shared.fetchDrugLogs(limit: nextLimit)
-                async let biometrics = FirebaseService.shared.fetchBiometrics(limit: nextLimit)
+                if let cursor = lastActivityDate {
+                    newActivities = try await FirebaseService.shared.fetchActivities(before: cursor, limit: pageSize)
+                }
+                if let cursor = lastDrugLogDate {
+                    newDrugLogs = try await FirebaseService.shared.fetchDrugLogs(before: cursor, limit: pageSize)
+                }
+                if let cursor = lastBiometricDate {
+                    newBiometrics = try await FirebaseService.shared.fetchBiometrics(before: cursor, limit: pageSize)
+                }
 
-                let (loadedActivities, loadedDrugLogs, loadedBiometrics) = try await (activities, drugLogs, biometrics)
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    let activityItems = newActivities.map { LogItem(activity: $0) }
+                    let drugLogItems = newDrugLogs.map { LogItem(drugLog: $0) }
+                    let biometricItems = newBiometrics.map { LogItem(biometric: $0) }
 
-                await MainActor.run {
-                    let activityItems = loadedActivities.map { LogItem(activity: $0) }
-                    let drugLogItems = loadedDrugLogs.map { LogItem(drugLog: $0) }
-                    let biometricItems = loadedBiometrics.map { LogItem(biometric: $0) }
+                    self.allLogs.append(contentsOf: activityItems + drugLogItems + biometricItems)
+                    self.allLogs.sort { $0.date > $1.date }
 
-                    let newAll = (activityItems + drugLogItems + biometricItems).sorted { $0.date > $1.date }
-                    self.hasMoreLogs = newAll.count > self.allLogs.count
-                    self.allLogs = newAll
+                    if let last = newActivities.last { self.lastActivityDate = last.startTime }
+                    if let last = newDrugLogs.last { self.lastDrugLogDate = last.timestamp }
+                    if let last = newBiometrics.last { self.lastBiometricDate = last.timestamp }
+
+                    self.hasMoreLogs = newActivities.count == self.pageSize
+                        || newDrugLogs.count == self.pageSize
+                        || newBiometrics.count == self.pageSize
                     self.recomputeFilteredLogs()
                     self.isLoading = false
                 }
             } catch {
                 print("Error loading more logs: \(error)")
-                await MainActor.run { self.isLoading = false }
+                await MainActor.run { [weak self] in self?.isLoading = false }
             }
         }
     }
@@ -549,33 +553,30 @@ class PastLogsViewModel: ObservableObject {
         case .all:
             break
         case .activities:
-            logs = logs.filter { $0.type == .activity }
+            logs = logs.filter { if case .activity = $0.content { return true }; return false }
         case .substances:
-            logs = logs.filter { $0.type == .drugLog }
+            logs = logs.filter { if case .drugLog = $0.content { return true }; return false }
         case .biometrics:
-            logs = logs.filter { $0.type == .biometric }
+            logs = logs.filter { if case .biometric = $0.content { return true }; return false }
         }
 
         if !searchText.isEmpty {
             logs = logs.filter { logItem in
-                switch logItem.type {
-                case .activity:
-                    return logItem.activity?.categoryName.localizedCaseInsensitiveContains(searchText) ?? false
-                case .drugLog:
-                    if let drugLog = logItem.drugLog {
-                        return drugLog.categoryName.localizedCaseInsensitiveContains(searchText) ||
-                               drugLog.method.localizedCaseInsensitiveContains(searchText)
-                    }
-                    return false
-                case .biometric:
-                    return logItem.biometric?.type.rawValue.localizedCaseInsensitiveContains(searchText) ?? false
+                switch logItem.content {
+                case .activity(let a):
+                    return a.categoryName.localizedCaseInsensitiveContains(searchText)
+                case .drugLog(let d):
+                    return d.categoryName.localizedCaseInsensitiveContains(searchText) ||
+                           d.method.localizedCaseInsensitiveContains(searchText)
+                case .biometric(let b):
+                    return b.type.rawValue.localizedCaseInsensitiveContains(searchText)
                 }
             }
         }
 
         filteredLogs = logs
         groupedLogs = Dictionary(grouping: logs) { logItem in
-            Calendar.current.startOfDay(for: logItem.date)
+            Calendar.current.startOfDay(for: logItem.groupDate)
         }
     }
 
@@ -601,12 +602,12 @@ class PastLogsViewModel: ObservableObject {
     }
 
     func deleteActivity(_ activity: Activity) {
-        Task {
+        Task { [weak self] in
             do {
                 try await FirebaseService.shared.deleteActivity(activity)
-                await MainActor.run {
-                    allLogs.removeAll { $0.id == activity.id }
-                    recomputeFilteredLogs()
+                await MainActor.run { [weak self] in
+                    self?.allLogs.removeAll { $0.id == activity.id }
+                    self?.recomputeFilteredLogs()
                 }
             } catch {
                 print("Error deleting activity: \(error)")
@@ -615,12 +616,12 @@ class PastLogsViewModel: ObservableObject {
     }
 
     func deleteDrugLog(_ drugLog: DrugLog) {
-        Task {
+        Task { [weak self] in
             do {
                 try await FirebaseService.shared.deleteDrugLog(drugLog)
-                await MainActor.run {
-                    allLogs.removeAll { $0.id == drugLog.id }
-                    recomputeFilteredLogs()
+                await MainActor.run { [weak self] in
+                    self?.allLogs.removeAll { $0.id == drugLog.id }
+                    self?.recomputeFilteredLogs()
                 }
             } catch {
                 print("Error deleting drug log: \(error)")
@@ -629,12 +630,12 @@ class PastLogsViewModel: ObservableObject {
     }
 
     func deleteBiometric(_ biometric: Biometric) {
-        Task {
+        Task { [weak self] in
             do {
                 try await FirebaseService.shared.deleteBiometric(biometric)
-                await MainActor.run {
-                    allLogs.removeAll { $0.id == biometric.id }
-                    recomputeFilteredLogs()
+                await MainActor.run { [weak self] in
+                    self?.allLogs.removeAll { $0.id == biometric.id }
+                    self?.recomputeFilteredLogs()
                 }
             } catch {
                 print("Error deleting biometric: \(error)")

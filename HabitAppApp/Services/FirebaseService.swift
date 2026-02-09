@@ -19,7 +19,7 @@ class FirebaseService: ObservableObject {
     private let db = Firestore.firestore()
     private let auth = Auth.auth()
 
-    // MARK: - In-Memory Cache
+    // MARK: - In-Memory Cache (thread-safe)
 
     private struct CacheEntry {
         let data: Any
@@ -28,6 +28,7 @@ class FirebaseService: ObservableObject {
     }
 
     private var cache: [String: CacheEntry] = [:]
+    private let cacheLock = NSLock()
 
     private func cacheKey(_ collection: String, type: String? = nil, since: Date? = nil, limit: Int? = nil) -> String {
         var key = collection
@@ -37,7 +38,25 @@ class FirebaseService: ObservableObject {
         return key
     }
 
+    private func getCachedValue(for key: String) -> CacheEntry? {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return cache[key]
+    }
+
+    private func setCachedValue(_ entry: CacheEntry, for key: String) {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        cache[key] = entry
+        // Evict stale entries to prevent unbounded growth
+        if cache.count > 50 {
+            cache = cache.filter { $0.value.isValid }
+        }
+    }
+
     private func invalidateCache(for collection: String) {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
         cache = cache.filter { !$0.key.hasPrefix(collection) }
     }
 
@@ -61,7 +80,15 @@ class FirebaseService: ObservableObject {
     }
     
     var userId: String {
-        return currentUser?.uid ?? ""
+        guard let uid = currentUser?.uid, !uid.isEmpty else {
+            preconditionFailure("FirebaseService.userId accessed before authentication")
+        }
+        return uid
+    }
+
+    /// Safe check before performing operations that need auth
+    var isReady: Bool {
+        currentUser?.uid != nil
     }
     
     // MARK: - Activity Operations
@@ -79,7 +106,7 @@ class FirebaseService: ObservableObject {
     
     func fetchActivities(since: Date? = nil, limit: Int? = nil) async throws -> [Activity] {
         let key = cacheKey("activities", since: since, limit: limit)
-        if let entry = cache[key], entry.isValid, let data = entry.data as? [Activity] {
+        if let entry = getCachedValue(for: key), entry.isValid, let data = entry.data as? [Activity] {
             return data
         }
 
@@ -99,10 +126,22 @@ class FirebaseService: ObservableObject {
 
         let snapshot = try await query.getDocuments()
         let results = snapshot.documents.compactMap { try? $0.data(as: Activity.self) }
-        cache[key] = CacheEntry(data: results, timestamp: Date())
+        setCachedValue(CacheEntry(data: results, timestamp: Date()), for: key)
         return results
     }
     
+    /// Fetch activities older than `before` (cursor-based pagination).
+    func fetchActivities(before: Date, limit: Int) async throws -> [Activity] {
+        let snapshot = try await db.collection("users")
+            .document(userId)
+            .collection("activities")
+            .whereField("startTime", isLessThan: Timestamp(date: before))
+            .order(by: "startTime", descending: true)
+            .limit(to: limit)
+            .getDocuments()
+        return snapshot.documents.compactMap { try? $0.data(as: Activity.self) }
+    }
+
     func deleteActivity(_ activity: Activity) async throws {
         guard let id = activity.id else { return }
         try await db.collection("users")
@@ -117,24 +156,32 @@ class FirebaseService: ObservableObject {
     
     func saveActivityCategory(_ category: ActivityCategory) async throws {
         let categoryRef = db.collection("users").document(userId).collection("activityCategories")
-        
+
         if let id = category.id {
             try categoryRef.document(id).setData(from: category, merge: true)
         } else {
             _ = try categoryRef.addDocument(from: category)
         }
+        invalidateCache(for: "activityCategories")
     }
-    
+
     func fetchActivityCategories() async throws -> [ActivityCategory] {
+        let key = cacheKey("activityCategories")
+        if let entry = getCachedValue(for: key), entry.isValid, let data = entry.data as? [ActivityCategory] {
+            return data
+        }
+
         let snapshot = try await db.collection("users")
             .document(userId)
             .collection("activityCategories")
             .order(by: "name")
             .getDocuments()
-        
-        return snapshot.documents.compactMap { document in
+
+        let results = snapshot.documents.compactMap { document in
             try? document.data(as: ActivityCategory.self)
         }
+        setCachedValue(CacheEntry(data: results, timestamp: Date()), for: key)
+        return results
     }
     
     // MARK: - Drug Log Operations
@@ -152,7 +199,7 @@ class FirebaseService: ObservableObject {
     
     func fetchDrugLogs(since: Date? = nil, limit: Int? = nil) async throws -> [DrugLog] {
         let key = cacheKey("drugLogs", since: since, limit: limit)
-        if let entry = cache[key], entry.isValid, let data = entry.data as? [DrugLog] {
+        if let entry = getCachedValue(for: key), entry.isValid, let data = entry.data as? [DrugLog] {
             return data
         }
 
@@ -172,10 +219,22 @@ class FirebaseService: ObservableObject {
 
         let snapshot = try await query.getDocuments()
         let results = snapshot.documents.compactMap { try? $0.data(as: DrugLog.self) }
-        cache[key] = CacheEntry(data: results, timestamp: Date())
+        setCachedValue(CacheEntry(data: results, timestamp: Date()), for: key)
         return results
     }
     
+    /// Fetch drug logs older than `before` (cursor-based pagination).
+    func fetchDrugLogs(before: Date, limit: Int) async throws -> [DrugLog] {
+        let snapshot = try await db.collection("users")
+            .document(userId)
+            .collection("drugLogs")
+            .whereField("timestamp", isLessThan: Timestamp(date: before))
+            .order(by: "timestamp", descending: true)
+            .limit(to: limit)
+            .getDocuments()
+        return snapshot.documents.compactMap { try? $0.data(as: DrugLog.self) }
+    }
+
     func deleteDrugLog(_ log: DrugLog) async throws {
         guard let id = log.id else { return }
         try await db.collection("users")
@@ -190,26 +249,42 @@ class FirebaseService: ObservableObject {
     
     func saveDrugCategory(_ category: DrugCategory) async throws {
         let categoryRef = db.collection("users").document(userId).collection("drugCategories")
-        
+
         if let id = category.id {
             try categoryRef.document(id).setData(from: category, merge: true)
         } else {
             _ = try categoryRef.addDocument(from: category)
         }
+        invalidateCache(for: "drugCategories")
     }
-    
+
     func fetchDrugCategories() async throws -> [DrugCategory] {
+        let key = cacheKey("drugCategories")
+        if let entry = getCachedValue(for: key), entry.isValid, let data = entry.data as? [DrugCategory] {
+            return data
+        }
+
         let snapshot = try await db.collection("users")
             .document(userId)
             .collection("drugCategories")
             .order(by: "name")
             .getDocuments()
-        
-        return snapshot.documents.compactMap { document in
+
+        let results = snapshot.documents.compactMap { document in
             try? document.data(as: DrugCategory.self)
         }
+        setCachedValue(CacheEntry(data: results, timestamp: Date()), for: key)
+        return results
     }
-    
+
+    func deleteDrugCategory(_ categoryId: String) async throws {
+        try await db.collection("users")
+            .document(userId)
+            .collection("drugCategories")
+            .document(categoryId)
+            .delete()
+    }
+
     // MARK: - Biometric Operations
     
     func saveBiometric(_ biometric: Biometric) async throws {
@@ -225,7 +300,7 @@ class FirebaseService: ObservableObject {
     
     func fetchBiometrics(type: BiometricType? = nil, since: Date? = nil, limit: Int? = nil) async throws -> [Biometric] {
         let key = cacheKey("biometrics", type: type?.rawValue, since: since, limit: limit)
-        if let entry = cache[key], entry.isValid, let data = entry.data as? [Biometric] {
+        if let entry = getCachedValue(for: key), entry.isValid, let data = entry.data as? [Biometric] {
             return data
         }
 
@@ -249,10 +324,22 @@ class FirebaseService: ObservableObject {
 
         let snapshot = try await query.getDocuments()
         let results = snapshot.documents.compactMap { try? $0.data(as: Biometric.self) }
-        cache[key] = CacheEntry(data: results, timestamp: Date())
+        setCachedValue(CacheEntry(data: results, timestamp: Date()), for: key)
         return results
     }
     
+    /// Fetch biometrics older than `before` (cursor-based pagination).
+    func fetchBiometrics(before: Date, limit: Int) async throws -> [Biometric] {
+        let snapshot = try await db.collection("users")
+            .document(userId)
+            .collection("biometrics")
+            .whereField("timestamp", isLessThan: Timestamp(date: before))
+            .order(by: "timestamp", descending: true)
+            .limit(to: limit)
+            .getDocuments()
+        return snapshot.documents.compactMap { try? $0.data(as: Biometric.self) }
+    }
+
     func deleteBiometric(_ biometric: Biometric) async throws {
         guard let id = biometric.id else { return }
         try await db.collection("users")
@@ -263,6 +350,32 @@ class FirebaseService: ObservableObject {
         invalidateCache(for: "biometrics")
     }
     
+    // MARK: - Biometric Type Preferences
+
+    func fetchBiometricTypePreferences() async throws -> [BiometricType] {
+        let docRef = db.collection("users").document(userId)
+            .collection("preferences").document("biometricTypes")
+
+        let snapshot = try await docRef.getDocument()
+
+        guard let data = snapshot.data(),
+              let rawValues = data["enabledTypes"] as? [String] else {
+            return Array(BiometricType.allCases)
+        }
+
+        let types = rawValues.compactMap { BiometricType(rawValue: $0) }
+        return types.isEmpty ? Array(BiometricType.allCases) : types
+    }
+
+    func saveBiometricTypePreferences(_ types: [BiometricType]) async throws {
+        let docRef = db.collection("users").document(userId)
+            .collection("preferences").document("biometricTypes")
+
+        try await docRef.setData([
+            "enabledTypes": types.map { $0.rawValue }
+        ])
+    }
+
     // MARK: - Activity Category Management
     
     func deleteActivityCategory(_ categoryId: String) async throws {
@@ -279,9 +392,17 @@ class FirebaseService: ObservableObject {
             .collection("activities")
             .whereField("categoryName", isEqualTo: categoryName)
             .getDocuments()
-        
-        for document in snapshot.documents {
-            try await document.reference.delete()
+
+        // Use batched writes (max 500 per batch) instead of sequential deletes
+        let batchSize = 500
+        for chunk in stride(from: 0, to: snapshot.documents.count, by: batchSize) {
+            let batch = db.batch()
+            let end = min(chunk + batchSize, snapshot.documents.count)
+            for i in chunk..<end {
+                batch.deleteDocument(snapshot.documents[i].reference)
+            }
+            try await batch.commit()
         }
+        invalidateCache(for: "activities")
     }
 }

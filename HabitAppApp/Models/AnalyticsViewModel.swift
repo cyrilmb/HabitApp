@@ -64,10 +64,10 @@ class AnalyticsViewModel: ObservableObject {
     func loadData(for timeRange: TimeRange, date: Date = Date()) {
         isLoading = true
 
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             do {
                 let (start, _) = self.windowBounds(for: timeRange, anchor: date)
-                // Use `since:` to scope the Firestore query for non-all ranges
                 let sinceDate: Date? = (timeRange == .all) ? nil : start
 
                 async let activitiesTask   = FirebaseService.shared.fetchActivities(since: sinceDate)
@@ -78,7 +78,8 @@ class AnalyticsViewModel: ObservableObject {
                 let (fetchedActivities, fetchedDrugLogs, fetchedBiometrics, fetchedCategories) =
                     try await (activitiesTask, drugLogsTask, biometricsTask, categoriesTask)
 
-                await MainActor.run {
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
                     let (start, end) = self.windowBounds(for: timeRange, anchor: date)
                     self.categories  = fetchedCategories
                     self.activities  = fetchedActivities.filter  { $0.startTime >= start && $0.startTime < end }
@@ -93,7 +94,7 @@ class AnalyticsViewModel: ObservableObject {
                 }
             } catch {
                 print("Error loading analytics data: \(error)")
-                await MainActor.run { self.isLoading = false }
+                await MainActor.run { [weak self] in self?.isLoading = false }
             }
         }
     }
@@ -101,32 +102,17 @@ class AnalyticsViewModel: ObservableObject {
     // MARK: - Window Bounds
 
     /// Returns the [start, end) interval for a given range anchored on `anchor`.
-    /// For Day/Week/Month/Year the window is the calendar unit that contains the anchor.
+    /// The anchor is the last day of the window. The window rolls backward by `dayCount` days.
     /// For All Time it spans the entire epoch → far future.
     private func windowBounds(for range: TimeRange, anchor: Date) -> (Date, Date) {
         let cal = Calendar.current
-        switch range {
-        case .day:
-            let start = cal.startOfDay(for: anchor)
-            let end   = cal.date(byAdding: .day,   value: 1, to: start)!
+        if let days = range.dayCount {
+            let startOfAnchor = cal.startOfDay(for: anchor)
+            let end   = cal.date(byAdding: .day, value: 1, to: startOfAnchor) ?? startOfAnchor
+            let start = cal.date(byAdding: .day, value: -(days - 1), to: startOfAnchor) ?? startOfAnchor
             return (start, end)
-        case .week:
-            // Locale-aware week start
-            let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: anchor)
-            let start = cal.date(from: comps) ?? cal.startOfDay(for: anchor)
-            let end   = cal.date(byAdding: .weekOfYear, value: 1, to: start)!
-            return (start, end)
-        case .month:
-            let comps = cal.dateComponents([.year, .month], from: anchor)
-            let start = cal.date(from: comps) ?? cal.startOfDay(for: anchor)
-            let end   = cal.date(byAdding: .month, value: 1, to: start)!
-            return (start, end)
-        case .year:
-            let comps = cal.dateComponents([.year], from: anchor)
-            let start = cal.date(from: comps) ?? cal.startOfDay(for: anchor)
-            let end   = cal.date(byAdding: .year,  value: 1, to: start)!
-            return (start, end)
-        case .all:
+        } else {
+            // All Time
             return (Date(timeIntervalSince1970: 0), Date(timeIntervalSince1970: 99999999999))
         }
     }
@@ -153,15 +139,24 @@ class AnalyticsViewModel: ObservableObject {
             return ActivityTimeData(
                 name: categoryName,
                 hours: categoryActivities.reduce(0.0) { $0 + $1.duration } / 3600,
+                count: categoryActivities.count,
                 colorHex: color
             )
         }
         .sorted { $0.hours > $1.hours }
         mostTrackedActivity = activityTimeData.first?.name ?? "-"
         
-        let dailyGroups = Dictionary(grouping: activities) { Calendar.current.startOfDay(for: $0.startTime) }
-        activityTrendData = dailyGroups.map { TrendData(date: $0.key, minutes: $0.value.reduce(0.0) { $0 + $1.duration } / 60) }
-            .sorted { $0.date < $1.date }
+        // Per-activity daily trend data
+        let byCategoryAndDay = Dictionary(grouping: activities) { activity in
+            "\(activity.categoryName)||\(Calendar.current.startOfDay(for: activity.startTime).timeIntervalSince1970)"
+        }
+        activityTrendData = byCategoryAndDay.map { key, group in
+            let name = group.first!.categoryName
+            let date = Calendar.current.startOfDay(for: group.first!.startTime)
+            let mins = group.reduce(0.0) { $0 + $1.duration } / 60
+            return TrendData(date: date, minutes: mins, categoryName: name)
+        }
+        .sorted { $0.date < $1.date }
     }
     
     // MARK: - Process Substance Data
@@ -246,23 +241,37 @@ class AnalyticsViewModel: ObservableObject {
         sleepTrendData = sleepData.map { BiometricTrendData(date: $0.timestamp, value: $0.value) }
         averageSleep = sleepData.isEmpty ? "-" : String(format: "%.1fh", sleepData.reduce(0.0) { $0 + $1.value } / Double(sleepData.count))
         
-        // Bed & Wake times — convert to fractional hour-of-day for the chart.
-        // Bed times after midnight (< 6 AM) are mapped to hour + 24 so the
-        // chart keeps them visually adjacent to the preceding evening.
+        // Bed & Wake times — anchored to the wake day (the morning date).
+        // The vertical gap between the two lines represents sleep duration.
+        // Evening bed times are shifted forward one day to the wake day.
+        // After-midnight bed times already fall on the wake day.
+        // Wake times use their actual date (already the wake day).
         let cal = Calendar.current
         var points: [BedWakeDataPoint] = []
-        
+
         for b in biometrics where b.type == .bedTime {
             let h = cal.component(.hour, from: b.timestamp)
             let m = cal.component(.minute, from: b.timestamp)
             var hour = Double(h) + Double(m) / 60.0
-            if h < 6 { hour += 24 }   // wrap early-morning bed times
-            points.append(BedWakeDataPoint(date: cal.startOfDay(for: b.timestamp), hour: hour, type: "Bed Time"))
+            var wakeDay = cal.startOfDay(for: b.timestamp)
+            if h < 6 {
+                // After-midnight bed time — already on the wake day
+                hour += 24
+            } else {
+                // Evening bed time — shift forward to the wake day
+                wakeDay = cal.date(byAdding: .day, value: 1, to: wakeDay) ?? wakeDay
+            }
+            points.append(BedWakeDataPoint(date: wakeDay, hour: hour, type: "Bed Time"))
         }
         for w in biometrics where w.type == .wakeTime {
             let h = cal.component(.hour, from: w.timestamp)
             let m = cal.component(.minute, from: w.timestamp)
-            points.append(BedWakeDataPoint(date: cal.startOfDay(for: w.timestamp), hour: Double(h) + Double(m) / 60.0, type: "Wake Time"))
+            var hour = Double(h) + Double(m) / 60.0
+            let wakeDay = cal.startOfDay(for: w.timestamp)
+            if h < 12 {
+                hour += 24  // Map to 24+ so it appears above bed time on the chart
+            }
+            points.append(BedWakeDataPoint(date: wakeDay, hour: hour, type: "Wake Time"))
         }
         bedWakeTimeData = points.sorted { $0.date < $1.date }
     }
@@ -312,10 +321,10 @@ class AnalyticsViewModel: ObservableObject {
         }
 
         let quadrantColors: [String: String] = [
-            "High Energy\n+ Pleasant": "#34C759",
-            "High Energy\n+ Unpleasant": "#FF3B30",
-            "Low Energy\n+ Pleasant": "#007AFF",
-            "Low Energy\n+ Unpleasant": "#8E8E93",
+            "High Energy\n+ Pleasant": "#FFD60A",     // Yale yellow
+            "High Energy\n+ Unpleasant": "#FF3B30",   // Yale red
+            "Low Energy\n+ Pleasant": "#34C759",       // Yale green
+            "Low Energy\n+ Unpleasant": "#007AFF",     // Yale blue
         ]
 
         moodQuadrantData = quadrants.map { key, count in
@@ -343,6 +352,7 @@ struct ActivityTimeData: Identifiable {
     let id = UUID()
     let name: String
     let hours: Double
+    let count: Int        // Number of sessions
     let colorHex: String  // Activity's color
 }
 
@@ -350,6 +360,7 @@ struct TrendData: Identifiable {
     let id = UUID()
     let date: Date
     let minutes: Double
+    let categoryName: String
 }
 
 struct SubstanceCountData: Identifiable {
@@ -398,9 +409,22 @@ struct MoodQuadrantData: Identifiable {
 }
 
 enum TimeRange: String, CaseIterable {
-    case day = "Day"
-    case week = "Week"
-    case month = "Month"
-    case year = "Year"
-    case all = "All Time"
+    case day = "1D"
+    case week = "7D"
+    case month = "30D"
+    case sixMonths = "6M"
+    case year = "1Y"
+    case all = "All"
+
+    /// Number of days in this rolling window (nil for All Time).
+    var dayCount: Int? {
+        switch self {
+        case .day:       return 1
+        case .week:      return 7
+        case .month:     return 30
+        case .sixMonths: return 182
+        case .year:      return 365
+        case .all:       return nil
+        }
+    }
 }

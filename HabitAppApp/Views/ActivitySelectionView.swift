@@ -202,7 +202,7 @@ struct ActivitySelectionView: View {
 struct CategoryRow: View {
     let category: ActivityCategory
     let action: () -> Void
-    
+
     var body: some View {
         Button(action: action) {
             HStack {
@@ -210,13 +210,25 @@ struct CategoryRow: View {
                 Circle()
                     .fill(Color(hex: category.colorHex ?? "#007AFF") ?? .blue)
                     .frame(width: 12, height: 12)
-                
-                Text(category.name)
-                    .font(.body)
-                    .foregroundColor(.primary)
-                
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(category.name)
+                        .font(.body)
+                        .foregroundColor(.primary)
+
+                    if let interval = category.notificationInterval {
+                        HStack(spacing: 4) {
+                            Image(systemName: "bell.fill")
+                                .font(.caption2)
+                            Text("Every \(formatInterval(interval))")
+                                .font(.caption)
+                        }
+                        .foregroundColor(.secondary)
+                    }
+                }
+
                 Spacer()
-                
+
                 Image(systemName: "chevron.right")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -228,6 +240,14 @@ struct CategoryRow: View {
         }
         .buttonStyle(.plain)
     }
+
+    private func formatInterval(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds / 60)
+        if minutes >= 60 {
+            return "\(minutes / 60)h"
+        }
+        return "\(minutes)m"
+    }
 }
 
 // MARK: - Create Category View
@@ -238,9 +258,10 @@ struct CreateCategoryView: View {
     @State private var selectedColor = "#007AFF"
     @State private var notificationEnabled = false
     @State private var notificationInterval: TimeInterval = 300 // 5 minutes default
-    
+    @State private var customMinutes: String = ""
+
     let onSave: (ActivityCategory) -> Void
-    
+
     private let colorOptions = [
         // Reds
         "#FF3B30", "#DC143C", "#C0392B", "#8B0000",
@@ -266,9 +287,10 @@ struct CreateCategoryView: View {
         ("10 minutes", 600),
         ("15 minutes", 900),
         ("30 minutes", 1800),
-        ("1 hour", 3600)
+        ("1 hour", 3600),
+        ("Custom", -1)
     ]
-    
+
     var body: some View {
         NavigationStack {
             Form {
@@ -278,7 +300,7 @@ struct CreateCategoryView: View {
                 } header: {
                     Text("Name")
                 }
-                
+
                 Section {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 44))], spacing: 12) {
                         ForEach(colorOptions, id: \.self) { colorHex in
@@ -298,14 +320,23 @@ struct CreateCategoryView: View {
                 } header: {
                     Text("Color")
                 }
-                
+
                 Section {
                     Toggle("Enable Notifications", isOn: $notificationEnabled)
-                    
+
                     if notificationEnabled {
                         Picker("Interval", selection: $notificationInterval) {
                             ForEach(notificationOptions, id: \.1) { option in
                                 Text(option.0).tag(option.1)
+                            }
+                        }
+
+                        if notificationInterval == -1 {
+                            HStack {
+                                TextField("Minutes", text: $customMinutes)
+                                    .keyboardType(.numberPad)
+                                Text("minutes")
+                                    .foregroundColor(.secondary)
                             }
                         }
                     }
@@ -335,11 +366,19 @@ struct CreateCategoryView: View {
     
     private func saveCategory() {
         let userId = FirebaseService.shared.userId
+        let actualInterval: TimeInterval? = {
+            guard notificationEnabled else { return nil }
+            if notificationInterval == -1 {
+                guard let mins = Double(customMinutes), mins > 0 else { return nil }
+                return mins * 60
+            }
+            return notificationInterval
+        }()
         let category = ActivityCategory(
             userId: userId,
             name: categoryName,
             colorHex: selectedColor,
-            notificationInterval: notificationEnabled ? notificationInterval : nil
+            notificationInterval: actualInterval
         )
         onSave(category)
         dismiss()
@@ -354,27 +393,26 @@ class ActivitySelectionViewModel: ObservableObject {
     
     func loadCategories() {
         isLoading = true
-        
-        Task {
+
+        Task { [weak self] in
             do {
                 let loadedCategories = try await FirebaseService.shared.fetchActivityCategories()
-                await MainActor.run {
-                    self.categories = loadedCategories
-                    self.isLoading = false
+                await MainActor.run { [weak self] in
+                    self?.categories = loadedCategories
+                    self?.isLoading = false
                 }
             } catch {
                 print("Error loading categories: \(error)")
-                await MainActor.run {
-                    self.isLoading = false
+                await MainActor.run { [weak self] in
+                    self?.isLoading = false
                 }
             }
         }
     }
-    
+
     func addCategory(_ category: ActivityCategory) {
         categories.append(category)
-        
-        // Save to Firebase
+
         Task {
             do {
                 try await FirebaseService.shared.saveActivityCategory(category)
@@ -504,18 +542,28 @@ struct EditCategoryView: View {
     @State private var selectedColor: String
     @State private var notificationEnabled: Bool
     @State private var notificationInterval: TimeInterval
+    @State private var customMinutes: String
     @State private var showDeleteAlert = false
     @State private var deleteAllLogs = false
     @State private var isDeleting = false
     @State private var isSaving = false
-    
+
+    private static let presetValues: Set<TimeInterval> = [300, 600, 900, 1800, 3600]
+
     init(category: ActivityCategory, onSave: @escaping () -> Void) {
         self.category = category
         self.onSave = onSave
         self._categoryName = State(initialValue: category.name)
         self._selectedColor = State(initialValue: category.colorHex ?? "#007AFF")
         self._notificationEnabled = State(initialValue: category.notificationInterval != nil)
-        self._notificationInterval = State(initialValue: category.notificationInterval ?? 300)
+
+        if let interval = category.notificationInterval, !Self.presetValues.contains(interval) {
+            self._notificationInterval = State(initialValue: -1)
+            self._customMinutes = State(initialValue: "\(Int(interval / 60))")
+        } else {
+            self._notificationInterval = State(initialValue: category.notificationInterval ?? 300)
+            self._customMinutes = State(initialValue: "")
+        }
     }
     
     private let colorOptions = [
@@ -543,9 +591,10 @@ struct EditCategoryView: View {
         ("10 minutes", 600),
         ("15 minutes", 900),
         ("30 minutes", 1800),
-        ("1 hour", 3600)
+        ("1 hour", 3600),
+        ("Custom", -1)
     ]
-    
+
     var body: some View {
         NavigationStack {
             Form {
@@ -555,7 +604,7 @@ struct EditCategoryView: View {
                 } header: {
                     Text("Name")
                 }
-                
+
                 Section {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 44))], spacing: 12) {
                         ForEach(colorOptions, id: \.self) { colorHex in
@@ -575,14 +624,23 @@ struct EditCategoryView: View {
                 } header: {
                     Text("Color")
                 }
-                
+
                 Section {
                     Toggle("Enable Notifications", isOn: $notificationEnabled)
-                    
+
                     if notificationEnabled {
                         Picker("Interval", selection: $notificationInterval) {
                             ForEach(notificationOptions, id: \.1) { option in
                                 Text(option.0).tag(option.1)
+                            }
+                        }
+
+                        if notificationInterval == -1 {
+                            HStack {
+                                TextField("Minutes", text: $customMinutes)
+                                    .keyboardType(.numberPad)
+                                Text("minutes")
+                                    .foregroundColor(.secondary)
                             }
                         }
                     }
@@ -591,7 +649,7 @@ struct EditCategoryView: View {
                 } footer: {
                     Text("Get reminded while your timer is running")
                 }
-                
+
                 Section {
                     Toggle("Delete all past logs", isOn: $deleteAllLogs)
                         .foregroundColor(.red)
@@ -650,11 +708,20 @@ struct EditCategoryView: View {
     
     private func saveChanges() {
         isSaving = true
-        
+
+        let actualInterval: TimeInterval? = {
+            guard notificationEnabled else { return nil }
+            if notificationInterval == -1 {
+                guard let mins = Double(customMinutes), mins > 0 else { return nil }
+                return mins * 60
+            }
+            return notificationInterval
+        }()
+
         var updatedCategory = category
         updatedCategory.name = categoryName
         updatedCategory.colorHex = selectedColor
-        updatedCategory.notificationInterval = notificationEnabled ? notificationInterval : nil
+        updatedCategory.notificationInterval = actualInterval
         
         Task {
             do {
