@@ -21,6 +21,7 @@ struct EditBiometricView: View {
     @State private var moodPleasantness: Double
     @State private var moodEnergy: Double
     @State private var isSaving = false
+    @State private var errorMessage: String?
 
     init(biometric: Biometric, onSave: @escaping (Biometric) -> Void) {
         self._biometric = State(initialValue: biometric)
@@ -35,9 +36,8 @@ struct EditBiometricView: View {
             self._bedTime = State(initialValue: Date())
             self._wakeTime = State(initialValue: Date())
         } else if biometric.type == .bedTime || biometric.type == .wakeTime {
-            let time = Date(timeIntervalSince1970: biometric.value)
-            self._bedTime = State(initialValue: time)
-            self._wakeTime = State(initialValue: time)
+            self._bedTime = State(initialValue: Date())
+            self._wakeTime = State(initialValue: Date())
             self._value = State(initialValue: "")
             self._moodPleasantness = State(initialValue: 0)
             self._moodEnergy = State(initialValue: 0)
@@ -73,17 +73,7 @@ struct EditBiometricView: View {
                     } footer: {
                         Text("Nearest: \(nearestEmotionLabel(pleasantness: moodPleasantness, energy: moodEnergy))")
                     }
-                } else if biometric.type == .bedTime || biometric.type == .wakeTime {
-                    Section {
-                        DatePicker(
-                            biometric.type == .bedTime ? "Bed Time" : "Wake Time",
-                            selection: biometric.type == .bedTime ? $bedTime : $wakeTime,
-                            displayedComponents: [.hourAndMinute]
-                        )
-                    } header: {
-                        Text("Time")
-                    }
-                } else {
+                } else if biometric.type != .bedTime && biometric.type != .wakeTime && biometric.type != .sleepDuration {
                     Section {
                         HStack {
                             TextField("Value", text: $value)
@@ -97,21 +87,63 @@ struct EditBiometricView: View {
                     }
                 }
                 
-                Section {
-                    DatePicker("Date & Time", selection: $timestamp, displayedComponents: [.date, .hourAndMinute])
-                } header: {
-                    Text("When")
+                if biometric.type == .sleepDuration {
+                    Section {
+                        HStack {
+                            TextField("Hours", text: $value)
+                                .keyboardType(.decimalPad)
+                            Text("hours")
+                                .foregroundColor(.secondary)
+                        }
+                    } header: {
+                        Text("Duration")
+                    }
+
+                    Section {
+                        DatePicker("Date", selection: $timestamp, displayedComponents: [.date])
+                    } header: {
+                        Text("When")
+                    }
+                } else if biometric.type == .bedTime || biometric.type == .wakeTime {
+                    Section {
+                        DatePicker(
+                            biometric.type == .bedTime ? "Bed Time" : "Wake Time",
+                            selection: $timestamp,
+                            displayedComponents: [.date, .hourAndMinute]
+                        )
+                    } header: {
+                        Text("When")
+                    }
+                } else {
+                    Section {
+                        DatePicker("Date & Time", selection: $timestamp, displayedComponents: [.date, .hourAndMinute])
+                    } header: {
+                        Text("When")
+                    }
                 }
                 
                 Section {
                     TextEditor(text: $notes)
                         .frame(height: 100)
+                        .onChange(of: notes) { _, new in
+                            if new.count > InputLimits.notes {
+                                notes = String(new.prefix(InputLimits.notes))
+                            }
+                        }
                 } header: {
                     Text("Notes")
                 }
             }
             .navigationTitle("Edit Biometric")
             .navigationBarTitleDisplayMode(.inline)
+            .alert("Error", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK") { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -141,10 +173,8 @@ struct EditBiometricView: View {
         if biometric.type == .mood {
             biometric.value = moodPleasantness
             biometric.secondaryValue = moodEnergy
-        } else if biometric.type == .bedTime {
-            biometric.value = bedTime.timeIntervalSince1970
-        } else if biometric.type == .wakeTime {
-            biometric.value = wakeTime.timeIntervalSince1970
+        } else if biometric.type == .bedTime || biometric.type == .wakeTime {
+            // Value is unused for bed/wake — timestamp holds the actual time
         } else {
             guard let numericValue = Double(value) else {
                 isSaving = false
@@ -168,6 +198,7 @@ struct EditBiometricView: View {
             } catch {
                 print("Error saving biometric: \(error)")
                 await MainActor.run {
+                    errorMessage = "Failed to save. Please try again."
                     isSaving = false
                 }
             }

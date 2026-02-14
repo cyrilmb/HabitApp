@@ -1,11 +1,18 @@
 import SwiftUI
 import FirebaseCore
 
+#if canImport(FirebaseAppCheck)
+import FirebaseAppCheck
+#endif
+
 @main
 struct HabitTrackerApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        #if canImport(FirebaseAppCheck)
+        AppCheck.setAppCheckProviderFactory(HabitAppCheckProviderFactory())
+        #endif
         FirebaseApp.configure()
     }
 

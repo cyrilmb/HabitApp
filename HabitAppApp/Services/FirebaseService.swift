@@ -78,6 +78,34 @@ class FirebaseService: ObservableObject {
     func signOut() throws {
         try auth.signOut()
     }
+
+    var isAnonymous: Bool {
+        currentUser?.isAnonymous ?? true
+    }
+
+    func signInWithApple(idToken: String, nonce: String) async throws {
+        let credential = OAuthProvider.appleCredential(
+            withIDToken: idToken,
+            rawNonce: nonce,
+            fullName: nil
+        )
+        try await auth.signIn(with: credential)
+    }
+
+    func linkAppleAccount(idToken: String, nonce: String) async throws {
+        guard let user = auth.currentUser else { return }
+        let credential = OAuthProvider.appleCredential(
+            withIDToken: idToken,
+            rawNonce: nonce,
+            fullName: nil
+        )
+        try await user.link(with: credential)
+    }
+
+    func deleteAccount() async throws {
+        guard let user = auth.currentUser else { return }
+        try await user.delete()
+    }
     
     var userId: String {
         guard let uid = currentUser?.uid, !uid.isEmpty else {

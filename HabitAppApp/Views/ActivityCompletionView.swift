@@ -14,8 +14,13 @@ struct ActivityCompletionView: View {
     let onSaved: () -> Void
     let onDiscarded: () -> Void
 
+    @State private var categoryName: String = ""
+    @State private var categoryNames: [String] = []
+    @State private var startTime: Date = Date()
+    @State private var endTime: Date = Date()
     @State private var notes: String = ""
     @State private var isSaving = false
+    @State private var errorMessage: String?
 
     var body: some View {
         Form {
@@ -25,11 +30,17 @@ struct ActivityCompletionView: View {
                         .foregroundColor(.green)
                         .font(.title2)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(activity.categoryName)
+                        Text(categoryName)
                             .font(.headline)
                         Text("Completed")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
+                    }
+                }
+
+                Picker("Activity", selection: $categoryName) {
+                    ForEach(categoryNames, id: \.self) { name in
+                        Text(name).tag(name)
                     }
                 }
             }
@@ -38,26 +49,14 @@ struct ActivityCompletionView: View {
                 HStack {
                     Text("Duration")
                     Spacer()
-                    Text(activity.formattedDuration)
+                    Text(computedDuration)
                         .fontWeight(.medium)
                         .foregroundColor(.blue)
                 }
 
-                HStack {
-                    Text("Started")
-                    Spacer()
-                    Text(formatTime(activity.startTime))
-                        .foregroundColor(.secondary)
-                }
+                DatePicker("Started", selection: $startTime, displayedComponents: [.date, .hourAndMinute])
 
-                if let endTime = activity.endTime {
-                    HStack {
-                        Text("Ended")
-                        Spacer()
-                        Text(formatTime(endTime))
-                            .foregroundColor(.secondary)
-                    }
-                }
+                DatePicker("Ended", selection: $endTime, displayedComponents: [.date, .hourAndMinute])
             } header: {
                 Text("Summary")
             }
@@ -65,12 +64,25 @@ struct ActivityCompletionView: View {
             Section {
                 TextEditor(text: $notes)
                     .frame(height: 100)
+                    .onChange(of: notes) { _, new in
+                        if new.count > InputLimits.notes {
+                            notes = String(new.prefix(InputLimits.notes))
+                        }
+                    }
             } header: {
                 Text("Notes (Optional)")
             }
         }
         .navigationTitle("Activity Complete")
         .navigationBarTitleDisplayMode(.inline)
+        .alert("Error", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("OK") { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Discard", role: .destructive) {
@@ -98,27 +110,49 @@ struct ActivityCompletionView: View {
                 .background(Color.blue.gradient)
                 .cornerRadius(12)
             }
-            .disabled(isSaving)
+            .disabled(isSaving || categoryName.isEmpty)
             .padding(.horizontal)
             .padding(.vertical, 12)
             .background(Color(.systemGroupedBackground))
         }
+        .onAppear {
+            categoryName = activity.categoryName
+            startTime = activity.startTime
+            endTime = activity.endTime ?? Date()
+        }
+        .task {
+            do {
+                let categories = try await FirebaseService.shared.fetchActivityCategories()
+                var names = categories.map(\.name)
+                if !names.contains(activity.categoryName) {
+                    names.insert(activity.categoryName, at: 0)
+                }
+                categoryNames = names
+            } catch {
+                categoryNames = [activity.categoryName]
+            }
+        }
     }
 
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.timeStyle = .short
-        return f
-    }()
-
-    private func formatTime(_ date: Date) -> String {
-        Self.timeFormatter.string(from: date)
+    private var computedDuration: String {
+        let seconds = endTime.timeIntervalSince(startTime)
+        guard seconds > 0 else { return "0:00" }
+        let hours = Int(seconds) / 3600
+        let minutes = (Int(seconds) % 3600) / 60
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        }
+        return "\(minutes)m"
     }
 
     private func saveActivity() {
         isSaving = true
 
         var activityToSave = activity
+        activityToSave.categoryName = categoryName
+        activityToSave.startTime = startTime
+        activityToSave.endTime = endTime
+        activityToSave.duration = endTime.timeIntervalSince(startTime)
         activityToSave.notes = notes.isEmpty ? nil : notes
         activityToSave.isActive = false
         activityToSave.updatedAt = Date()
@@ -134,6 +168,7 @@ struct ActivityCompletionView: View {
             } catch {
                 print("Error saving activity: \(error)")
                 await MainActor.run {
+                    errorMessage = "Failed to save activity. Please try again."
                     isSaving = false
                 }
             }

@@ -19,13 +19,13 @@ struct ActivitySelectionView: View {
     @State private var showTimerConflictAlert = false
     @State private var pendingCategoryName: String?
     @State private var selectedNotificationInterval: TimeInterval?
-    
+
     var body: some View {
         NavigationStack {
             ZStack {
                 Color(.systemGroupedBackground)
                     .ignoresSafeArea()
-                
+
                 VStack(spacing: 24) {
                     if viewModel.isLoading {
                         ProgressView("Loading categories...")
@@ -72,6 +72,14 @@ struct ActivitySelectionView: View {
             .onAppear {
                 viewModel.loadCategories()
             }
+            .alert("Error", isPresented: Binding(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.errorMessage = nil } }
+            )) {
+                Button("OK") { viewModel.errorMessage = nil }
+            } message: {
+                Text(viewModel.errorMessage ?? "")
+            }
             .alert("Timer Already Running", isPresented: $showTimerConflictAlert) {
                 Button("Cancel", role: .cancel) {
                     pendingCategoryName = nil
@@ -89,25 +97,25 @@ struct ActivitySelectionView: View {
             }
         }
     }
-    
+
     // MARK: - Empty State
-    
+
     private var emptyStateView: some View {
         VStack(spacing: 20) {
             Image(systemName: "timer.circle")
                 .font(.system(size: 80))
                 .foregroundColor(.blue.opacity(0.5))
-            
+
             Text("No Activities Yet")
                 .font(.title2)
                 .fontWeight(.semibold)
-            
+
             Text("Create your first activity category to start tracking")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
-            
+
             Button(action: { showCreateNew = true }) {
                 Label("Create Activity", systemImage: "plus.circle.fill")
                     .font(.headline)
@@ -120,9 +128,9 @@ struct ActivitySelectionView: View {
             .padding(.horizontal)
         }
     }
-    
+
     // MARK: - Category List
-    
+
     private var categoryListView: some View {
         ScrollView {
             VStack(spacing: 12) {
@@ -132,10 +140,10 @@ struct ActivitySelectionView: View {
                         Image(systemName: "plus.circle.fill")
                             .font(.title2)
                             .foregroundColor(.green)
-                        
+
                         Text("Create New Activity")
                             .font(.headline)
-                        
+
                         Spacer()
                     }
                     .padding()
@@ -143,10 +151,10 @@ struct ActivitySelectionView: View {
                     .cornerRadius(12)
                 }
                 .buttonStyle(.plain)
-                
+
                 Divider()
                     .padding(.vertical, 8)
-                
+
                 // Existing Categories
                 ForEach(viewModel.categories) { category in
                     CategoryRow(category: category) {
@@ -156,9 +164,9 @@ struct ActivitySelectionView: View {
             }
         }
     }
-    
+
     // MARK: - Helper
-    
+
     private func startActivityTimer(categoryName: String) {
         // Check if timer is already running
         if timerService.isRunning {
@@ -183,6 +191,9 @@ struct ActivitySelectionView: View {
                     print("Auto-saved previous activity: \(completedActivity.categoryName)")
                 } catch {
                     print("Error auto-saving: \(error)")
+                    await MainActor.run {
+                        viewModel.errorMessage = "Warning: previous activity could not be saved."
+                    }
                 }
             }
         }
@@ -240,149 +251,6 @@ struct CategoryRow: View {
         }
         .buttonStyle(.plain)
     }
-
-    private func formatInterval(_ seconds: TimeInterval) -> String {
-        let minutes = Int(seconds / 60)
-        if minutes >= 60 {
-            return "\(minutes / 60)h"
-        }
-        return "\(minutes)m"
-    }
-}
-
-// MARK: - Create Category View
-
-struct CreateCategoryView: View {
-    @Environment(\.dismiss) var dismiss
-    @State private var categoryName = ""
-    @State private var selectedColor = "#007AFF"
-    @State private var notificationEnabled = false
-    @State private var notificationInterval: TimeInterval = 300 // 5 minutes default
-    @State private var customMinutes: String = ""
-
-    let onSave: (ActivityCategory) -> Void
-
-    private let colorOptions = [
-        // Reds
-        "#FF3B30", "#DC143C", "#C0392B", "#8B0000",
-        // Oranges
-        "#FF9500", "#FF6347", "#E67E22", "#D35400",
-        // Yellows
-        "#FFD700", "#F39C12", "#F1C40F", "#D4AC0D",
-        // Greens
-        "#34C759", "#2ECC71", "#27AE60", "#1E8449",
-        // Blues
-        "#007AFF", "#3498DB", "#2980B9", "#1F618D",
-        // Purples
-        "#5856D6", "#9B59B6", "#8E44AD", "#6C3483",
-        // Pinks
-        "#FF2D55", "#E91E63", "#EC407A", "#AD1457",
-        // Neutrals
-        "#2C3E50", "#34495E", "#7F8C8D", "#95A5A6",
-        "#BDC3C7", "#D5DBDB", "#ECF0F1", "#F8F9FA"
-    ]
-    
-    private let notificationOptions: [(String, TimeInterval)] = [
-        ("5 minutes", 300),
-        ("10 minutes", 600),
-        ("15 minutes", 900),
-        ("30 minutes", 1800),
-        ("1 hour", 3600),
-        ("Custom", -1)
-    ]
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("Activity Name", text: $categoryName)
-                        .autocapitalization(.words)
-                } header: {
-                    Text("Name")
-                }
-
-                Section {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 44))], spacing: 12) {
-                        ForEach(colorOptions, id: \.self) { colorHex in
-                            Circle()
-                                .fill(Color(hex: colorHex) ?? .blue)
-                                .frame(width: 44, height: 44)
-                                .overlay(
-                                    Circle()
-                                        .strokeBorder(Color.primary, lineWidth: selectedColor == colorHex ? 3 : 0)
-                                )
-                                .onTapGesture {
-                                    selectedColor = colorHex
-                                }
-                        }
-                    }
-                    .padding(.vertical, 8)
-                } header: {
-                    Text("Color")
-                }
-
-                Section {
-                    Toggle("Enable Notifications", isOn: $notificationEnabled)
-
-                    if notificationEnabled {
-                        Picker("Interval", selection: $notificationInterval) {
-                            ForEach(notificationOptions, id: \.1) { option in
-                                Text(option.0).tag(option.1)
-                            }
-                        }
-
-                        if notificationInterval == -1 {
-                            HStack {
-                                TextField("Minutes", text: $customMinutes)
-                                    .keyboardType(.numberPad)
-                                Text("minutes")
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Timer Notifications")
-                } footer: {
-                    Text("Get reminded while your timer is running")
-                }
-            }
-            .navigationTitle("New Activity")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        saveCategory()
-                    }
-                    .disabled(categoryName.isEmpty)
-                }
-            }
-        }
-    }
-    
-    private func saveCategory() {
-        let userId = FirebaseService.shared.userId
-        let actualInterval: TimeInterval? = {
-            guard notificationEnabled else { return nil }
-            if notificationInterval == -1 {
-                guard let mins = Double(customMinutes), mins > 0 else { return nil }
-                return mins * 60
-            }
-            return notificationInterval
-        }()
-        let category = ActivityCategory(
-            userId: userId,
-            name: categoryName,
-            colorHex: selectedColor,
-            notificationInterval: actualInterval
-        )
-        onSave(category)
-        dismiss()
-    }
 }
 
 // MARK: - ViewModel
@@ -390,7 +258,8 @@ struct CreateCategoryView: View {
 class ActivitySelectionViewModel: ObservableObject {
     @Published var categories: [ActivityCategory] = []
     @Published var isLoading = false
-    
+    @Published var errorMessage: String?
+
     func loadCategories() {
         isLoading = true
 
@@ -404,6 +273,7 @@ class ActivitySelectionViewModel: ObservableObject {
             } catch {
                 print("Error loading categories: \(error)")
                 await MainActor.run { [weak self] in
+                    self?.errorMessage = "Failed to load activities."
                     self?.isLoading = false
                 }
             }
@@ -418,6 +288,9 @@ class ActivitySelectionViewModel: ObservableObject {
                 try await FirebaseService.shared.saveActivityCategory(category)
             } catch {
                 print("Error saving category: \(error)")
+                await MainActor.run { [weak self] in
+                    self?.errorMessage = "Failed to save activity."
+                }
             }
         }
     }
@@ -451,321 +324,4 @@ extension Color {
 
 #Preview {
     ActivitySelectionView()
-}
-
-// MARK: - Edit Categories View
-
-struct EditCategoriesView: View {
-    let categories: [ActivityCategory]
-    let onUpdate: () -> Void
-    
-    @Environment(\.dismiss) var dismiss
-    @State private var selectedCategory: ActivityCategory?
-    @State private var showEditSheet = false
-    
-    var body: some View {
-        NavigationStack {
-            List {
-                ForEach(categories) { category in
-                    Button(action: {
-                        selectedCategory = category
-                        showEditSheet = true
-                    }) {
-                        HStack(spacing: 12) {
-                            Circle()
-                                .fill(Color(hex: category.colorHex ?? "#007AFF") ?? .blue)
-                                .frame(width: 32, height: 32)
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(category.name)
-                                    .font(.headline)
-                                    .foregroundColor(.primary)
-                                
-                                if let interval = category.notificationInterval {
-                                    Text("Notifications every \(formatInterval(interval))")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    Text("No notifications")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.right")
-                                .foregroundColor(.secondary)
-                                .font(.caption)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .navigationTitle("Edit Activities")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-            .sheet(isPresented: $showEditSheet) {
-                if let category = selectedCategory {
-                    EditCategoryView(category: category) {
-                        onUpdate()
-                        showEditSheet = false
-                    }
-                }
-            }
-        }
-    }
-    
-    private func formatInterval(_ seconds: TimeInterval) -> String {
-        let minutes = Int(seconds / 60)
-        if minutes >= 60 {
-            return "\(minutes / 60)h"
-        }
-        return "\(minutes)m"
-    }
-}
-
-// MARK: - Edit Single Category View
-
-struct EditCategoryView: View {
-    let category: ActivityCategory
-    let onSave: () -> Void
-    
-    @Environment(\.dismiss) var dismiss
-    @State private var categoryName: String
-    @State private var selectedColor: String
-    @State private var notificationEnabled: Bool
-    @State private var notificationInterval: TimeInterval
-    @State private var customMinutes: String
-    @State private var showDeleteAlert = false
-    @State private var deleteAllLogs = false
-    @State private var isDeleting = false
-    @State private var isSaving = false
-
-    private static let presetValues: Set<TimeInterval> = [300, 600, 900, 1800, 3600]
-
-    init(category: ActivityCategory, onSave: @escaping () -> Void) {
-        self.category = category
-        self.onSave = onSave
-        self._categoryName = State(initialValue: category.name)
-        self._selectedColor = State(initialValue: category.colorHex ?? "#007AFF")
-        self._notificationEnabled = State(initialValue: category.notificationInterval != nil)
-
-        if let interval = category.notificationInterval, !Self.presetValues.contains(interval) {
-            self._notificationInterval = State(initialValue: -1)
-            self._customMinutes = State(initialValue: "\(Int(interval / 60))")
-        } else {
-            self._notificationInterval = State(initialValue: category.notificationInterval ?? 300)
-            self._customMinutes = State(initialValue: "")
-        }
-    }
-    
-    private let colorOptions = [
-        // Reds
-        "#FF3B30", "#DC143C", "#C0392B", "#8B0000",
-        // Oranges
-        "#FF9500", "#FF6347", "#E67E22", "#D35400",
-        // Yellows
-        "#FFD700", "#F39C12", "#F1C40F", "#D4AC0D",
-        // Greens
-        "#34C759", "#2ECC71", "#27AE60", "#1E8449",
-        // Blues
-        "#007AFF", "#3498DB", "#2980B9", "#1F618D",
-        // Purples
-        "#5856D6", "#9B59B6", "#8E44AD", "#6C3483",
-        // Pinks
-        "#FF2D55", "#E91E63", "#EC407A", "#AD1457",
-        // Neutrals
-        "#2C3E50", "#34495E", "#7F8C8D", "#95A5A6",
-        "#BDC3C7", "#D5DBDB", "#ECF0F1", "#F8F9FA"
-    ]
-    
-    private let notificationOptions: [(String, TimeInterval)] = [
-        ("5 minutes", 300),
-        ("10 minutes", 600),
-        ("15 minutes", 900),
-        ("30 minutes", 1800),
-        ("1 hour", 3600),
-        ("Custom", -1)
-    ]
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("Activity Name", text: $categoryName)
-                        .autocapitalization(.words)
-                } header: {
-                    Text("Name")
-                }
-
-                Section {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 44))], spacing: 12) {
-                        ForEach(colorOptions, id: \.self) { colorHex in
-                            Circle()
-                                .fill(Color(hex: colorHex) ?? .blue)
-                                .frame(width: 44, height: 44)
-                                .overlay(
-                                    Circle()
-                                        .strokeBorder(Color.primary, lineWidth: selectedColor == colorHex ? 3 : 0)
-                                )
-                                .onTapGesture {
-                                    selectedColor = colorHex
-                                }
-                        }
-                    }
-                    .padding(.vertical, 8)
-                } header: {
-                    Text("Color")
-                }
-
-                Section {
-                    Toggle("Enable Notifications", isOn: $notificationEnabled)
-
-                    if notificationEnabled {
-                        Picker("Interval", selection: $notificationInterval) {
-                            ForEach(notificationOptions, id: \.1) { option in
-                                Text(option.0).tag(option.1)
-                            }
-                        }
-
-                        if notificationInterval == -1 {
-                            HStack {
-                                TextField("Minutes", text: $customMinutes)
-                                    .keyboardType(.numberPad)
-                                Text("minutes")
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                } header: {
-                    Text("Timer Notifications")
-                } footer: {
-                    Text("Get reminded while your timer is running")
-                }
-
-                Section {
-                    Toggle("Delete all past logs", isOn: $deleteAllLogs)
-                        .foregroundColor(.red)
-                    
-                    Button(role: .destructive, action: { showDeleteAlert = true }) {
-                        HStack {
-                            Spacer()
-                            if isDeleting {
-                                ProgressView()
-                            } else {
-                                Text("Delete Activity")
-                            }
-                            Spacer()
-                        }
-                    }
-                    .disabled(isDeleting)
-                } header: {
-                    Text("Danger Zone")
-                } footer: {
-                    if deleteAllLogs {
-                        Text("⚠️ This will permanently delete this activity category and all \(category.name) logs")
-                    } else {
-                        Text("This will delete the activity category but keep past logs")
-                    }
-                }
-            }
-            .navigationTitle("Edit Activity")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        saveChanges()
-                    }
-                    .disabled(categoryName.isEmpty || isSaving)
-                }
-            }
-            .alert("Delete Activity?", isPresented: $showDeleteAlert) {
-                Button("Cancel", role: .cancel) { }
-                Button("Delete", role: .destructive) {
-                    deleteCategory()
-                }
-            } message: {
-                if deleteAllLogs {
-                    Text("This will permanently delete \(category.name) and all past logs. This cannot be undone.")
-                } else {
-                    Text("This will delete \(category.name) but keep past logs.")
-                }
-            }
-        }
-    }
-    
-    private func saveChanges() {
-        isSaving = true
-
-        let actualInterval: TimeInterval? = {
-            guard notificationEnabled else { return nil }
-            if notificationInterval == -1 {
-                guard let mins = Double(customMinutes), mins > 0 else { return nil }
-                return mins * 60
-            }
-            return notificationInterval
-        }()
-
-        var updatedCategory = category
-        updatedCategory.name = categoryName
-        updatedCategory.colorHex = selectedColor
-        updatedCategory.notificationInterval = actualInterval
-        
-        Task {
-            do {
-                try await FirebaseService.shared.saveActivityCategory(updatedCategory)
-                await MainActor.run {
-                    isSaving = false
-                    onSave()
-                    dismiss()
-                }
-            } catch {
-                print("Error saving category: \(error)")
-                await MainActor.run {
-                    isSaving = false
-                }
-            }
-        }
-    }
-    
-    private func deleteCategory() {
-        isDeleting = true
-        
-        Task {
-            do {
-                // Delete category
-                if let categoryId = category.id {
-                    try await FirebaseService.shared.deleteActivityCategory(categoryId)
-                }
-                
-                // Delete all logs if requested
-                if deleteAllLogs {
-                    try await FirebaseService.shared.deleteActivitiesByCategory(category.name)
-                }
-                
-                await MainActor.run {
-                    isDeleting = false
-                    onSave()
-                    dismiss()
-                }
-            } catch {
-                print("Error deleting category: \(error)")
-                await MainActor.run {
-                    isDeleting = false
-                }
-            }
-        }
-    }
 }

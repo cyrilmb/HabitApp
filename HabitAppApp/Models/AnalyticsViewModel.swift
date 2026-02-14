@@ -10,7 +10,8 @@ import Combine
 
 class AnalyticsViewModel: ObservableObject {
     @Published var isLoading = false
-    
+    @Published var errorMessage: String?
+
     // Activity Data
     @Published var activityTimeData: [ActivityTimeData] = []
     @Published var activityTrendData: [TrendData] = []
@@ -94,7 +95,10 @@ class AnalyticsViewModel: ObservableObject {
                 }
             } catch {
                 print("Error loading analytics data: \(error)")
-                await MainActor.run { [weak self] in self?.isLoading = false }
+                await MainActor.run { [weak self] in
+                    self?.errorMessage = "Failed to load analytics data."
+                    self?.isLoading = false
+                }
             }
         }
     }

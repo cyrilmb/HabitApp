@@ -16,6 +16,15 @@ struct HomeView: View {
     @State private var navigateToDataDisplay = false
     @State private var showTimerSheet = false
     @State private var timerSheetActivity: Activity?  // Capture activity for timer sheet
+    @State private var iconIndex = 0
+    @State private var iconTimer: Timer?
+
+    private let cyclingIcons = [
+        ("pause.fill", "Pause"),
+        ("rectangle.and.pencil.and.ellipsis", "Record"),
+        ("paperplane.fill", "Act"),
+        ("brain.head.profile.fill", "Reflect"),
+    ]
 
     var body: some View {
         NavigationStack {
@@ -28,20 +37,37 @@ struct HomeView: View {
                 .ignoresSafeArea()
 
                 VStack(spacing: 30) {
-                    VStack(spacing: 8) {
-                        Image(systemName: "target")
+                    VStack(spacing: 12) {
+                        Image(systemName: cyclingIcons[iconIndex].0)
                             .font(.system(size: 60))
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(.indigo)
+                            .frame(width: 80, height: 80)
+                            .contentTransition(.symbolEffect(.replace))
+                            .id(iconIndex)
 
-                        Text("Habit Tracker")
-                            .font(.largeTitle)
+                        Text(cyclingIcons[iconIndex].1)
+                            .font(.title)
                             .fontWeight(.bold)
+                            .contentTransition(.numericText())
 
                         Text("Track your daily activities and habits")
-                            .font(.subheadline)
+                            .font(.title3)
                             .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
                     }
                     .padding(.top, 40)
+                    .onAppear {
+                        guard iconTimer == nil else { return }
+                        iconTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
+                            withAnimation(.easeInOut(duration: 0.6)) {
+                                iconIndex = (iconIndex + 1) % cyclingIcons.count
+                            }
+                        }
+                    }
+                    .onDisappear {
+                        iconTimer?.invalidate()
+                        iconTimer = nil
+                    }
 
                     Spacer()
 
@@ -115,6 +141,15 @@ struct HomeView: View {
                     TimerPillView {
                         timerSheetActivity = timerService.currentActivity
                         showTimerSheet = true
+                    }
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink(destination: AccountView()) {
+                        Image(systemName: "person.circle")
+                            .font(.title3)
+                            .foregroundColor(.primary)
                     }
                 }
             }
