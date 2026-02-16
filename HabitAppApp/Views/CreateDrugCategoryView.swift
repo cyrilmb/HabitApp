@@ -13,6 +13,13 @@ struct CreateDrugCategoryView: View {
     @State private var methods: [String] = [""]
     @State private var dosageUnit = ""
 
+    // Goal
+    @State private var goalEnabled = false
+    @State private var goalKind: GoalKind = .limit
+    @State private var goalValue: String = ""
+    @State private var goalUnit: String = "times"
+    @State private var goalPeriod: GoalPeriod = .daily
+
     let onSave: (DrugCategory) -> Void
 
     var body: some View {
@@ -68,11 +75,42 @@ struct CreateDrugCategoryView: View {
                             if new.count > InputLimits.dosageUnit {
                                 dosageUnit = String(new.prefix(InputLimits.dosageUnit))
                             }
+                            if !new.isEmpty { goalUnit = new }
                         }
                 } header: {
                     Text("Dosage Unit")
                 } footer: {
                     Text("e.g., drinks, mg, oz")
+                }
+
+                Section {
+                    Toggle("Set a Goal", isOn: $goalEnabled)
+
+                    if goalEnabled {
+                        Picker("Goal Type", selection: $goalKind) {
+                            Text("Target").tag(GoalKind.target)
+                            Text("Limit").tag(GoalKind.limit)
+                        }
+                        .pickerStyle(.segmented)
+
+                        HStack {
+                            TextField("Value", text: $goalValue)
+                                .keyboardType(.decimalPad)
+                            TextField("Unit", text: $goalUnit)
+                        }
+
+                        Picker("Period", selection: $goalPeriod) {
+                            ForEach(GoalPeriod.allCases, id: \.self) { p in
+                                Text(p.displayName).tag(p)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Goal")
+                } footer: {
+                    if goalEnabled {
+                        Text(goalKind == .limit ? "Set a usage limit" : "Set a usage target")
+                    }
                 }
 
                 Section {
@@ -137,6 +175,24 @@ struct CreateDrugCategoryView: View {
         )
 
         onSave(category)
+
+        // Create goal if enabled
+        if goalEnabled, let val = Double(goalValue), val > 0 {
+            let goal = Goal(
+                userId: userId,
+                categoryType: .substance,
+                categoryName: categoryName,
+                kind: goalKind,
+                comparison: goalKind == .limit ? .atMost : .atLeast,
+                value: val,
+                unit: goalUnit,
+                period: goalPeriod
+            )
+            Task {
+                try? await FirebaseService.shared.saveGoal(goal)
+            }
+        }
+
         dismiss()
     }
 }

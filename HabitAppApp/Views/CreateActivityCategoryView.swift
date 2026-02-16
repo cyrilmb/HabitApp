@@ -15,6 +15,12 @@ struct CreateCategoryView: View {
     @State private var notificationInterval: TimeInterval = 300 // 5 minutes default
     @State private var customMinutes: String = ""
 
+    // Goal
+    @State private var goalEnabled = false
+    @State private var goalValue: String = ""
+    @State private var goalUnit: String = "hours"
+    @State private var goalPeriod: GoalPeriod = .daily
+
     let onSave: (ActivityCategory) -> Void
 
     var body: some View {
@@ -76,6 +82,34 @@ struct CreateCategoryView: View {
                 } footer: {
                     Text("Get reminded while your timer is running")
                 }
+
+                Section {
+                    Toggle("Set a Goal", isOn: $goalEnabled)
+
+                    if goalEnabled {
+                        HStack {
+                            TextField("Value", text: $goalValue)
+                                .keyboardType(.decimalPad)
+                            Picker("Unit", selection: $goalUnit) {
+                                Text("hours").tag("hours")
+                                Text("minutes").tag("minutes")
+                            }
+                            .labelsHidden()
+                        }
+
+                        Picker("Period", selection: $goalPeriod) {
+                            ForEach(GoalPeriod.allCases, id: \.self) { p in
+                                Text(p.displayName).tag(p)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Goal")
+                } footer: {
+                    if goalEnabled {
+                        Text("Set a time target for this activity")
+                    }
+                }
             }
             .navigationTitle("New Activity")
             .navigationBarTitleDisplayMode(.inline)
@@ -112,6 +146,24 @@ struct CreateCategoryView: View {
             notificationInterval: actualInterval
         )
         onSave(category)
+
+        // Create goal if enabled
+        if goalEnabled, let val = Double(goalValue), val > 0 {
+            let goal = Goal(
+                userId: userId,
+                categoryType: .activity,
+                categoryName: categoryName,
+                kind: .target,
+                comparison: .atLeast,
+                value: val,
+                unit: goalUnit,
+                period: goalPeriod
+            )
+            Task {
+                try? await FirebaseService.shared.saveGoal(goal)
+            }
+        }
+
         dismiss()
     }
 }

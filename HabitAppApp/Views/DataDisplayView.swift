@@ -185,8 +185,29 @@ struct DataDisplayView: View {
         Calendar.current.startOfDay(for: Date())
     }
     
+    private func goalProgressSection(for type: GoalCategoryType) -> some View {
+        let items = viewModel.goalProgressItems.filter { $0.goal.categoryType == type }
+        return Group {
+            if !items.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Goals")
+                        .font(.headline)
+                        .padding(.horizontal)
+
+                    ForEach(items) { item in
+                        GoalProgressCard(progress: item)
+                            .padding(.horizontal)
+                    }
+                }
+            }
+        }
+    }
+
     private var activityAnalytics: some View {
         VStack(spacing: 24) {
+            // Goal Progress
+            goalProgressSection(for: .activity)
+
             // Statistics Cards
             statisticsCards
             
@@ -361,6 +382,9 @@ struct DataDisplayView: View {
     
     private var substanceAnalytics: some View {
         VStack(spacing: 24) {
+            // Goal Progress
+            goalProgressSection(for: .substance)
+
             // Substance Statistics
             substanceStatisticsCards
             
@@ -559,6 +583,9 @@ struct DataDisplayView: View {
     
     private var biometricAnalytics: some View {
         VStack(spacing: 24) {
+            // Goal Progress
+            goalProgressSection(for: .biometric)
+
             // Biometric Statistics
             biometricStatisticsCards
             

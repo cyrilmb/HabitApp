@@ -47,6 +47,9 @@ class AnalyticsViewModel: ObservableObject {
     @Published var averageSleep = "-"
     @Published var weightChange = "-"
 
+    // Goal Progress
+    @Published var goalProgressItems: [GoalProgress] = []
+
     // Mood Data
     @Published var moodScatterData: [MoodScatterPoint] = []
     @Published var moodTrendData: [MoodTrendPoint] = []
@@ -75,9 +78,10 @@ class AnalyticsViewModel: ObservableObject {
                 async let drugLogsTask     = FirebaseService.shared.fetchDrugLogs(since: sinceDate)
                 async let biometricsTask   = FirebaseService.shared.fetchBiometrics(since: sinceDate)
                 async let categoriesTask   = FirebaseService.shared.fetchActivityCategories()
+                async let goalsTask        = FirebaseService.shared.fetchGoals()
 
-                let (fetchedActivities, fetchedDrugLogs, fetchedBiometrics, fetchedCategories) =
-                    try await (activitiesTask, drugLogsTask, biometricsTask, categoriesTask)
+                let (fetchedActivities, fetchedDrugLogs, fetchedBiometrics, fetchedCategories, fetchedGoals) =
+                    try await (activitiesTask, drugLogsTask, biometricsTask, categoriesTask, goalsTask)
 
                 await MainActor.run { [weak self] in
                     guard let self else { return }
@@ -91,6 +95,7 @@ class AnalyticsViewModel: ObservableObject {
                     self.processSubstanceData()
                     self.processBiometricData()
                     self.processMoodData()
+                    self.processGoalProgress(goals: fetchedGoals, allActivities: fetchedActivities, allDrugLogs: fetchedDrugLogs, allBiometrics: fetchedBiometrics, date: date)
                     self.isLoading = false
                 }
             } catch {
@@ -278,6 +283,20 @@ class AnalyticsViewModel: ObservableObject {
             points.append(BedWakeDataPoint(date: wakeDay, hour: hour, type: "Wake Time"))
         }
         bedWakeTimeData = points.sorted { $0.date < $1.date }
+    }
+
+    // MARK: - Process Goal Progress
+
+    private func processGoalProgress(goals: [Goal], allActivities: [Activity], allDrugLogs: [DrugLog], allBiometrics: [Biometric], date: Date) {
+        goalProgressItems = goals.filter { $0.isActive }.map { goal in
+            GoalProgressCalculator.calculateProgress(
+                goal: goal,
+                activities: allActivities,
+                drugLogs: allDrugLogs,
+                biometrics: allBiometrics,
+                referenceDate: date
+            )
+        }
     }
 
     // MARK: - Process Mood Data

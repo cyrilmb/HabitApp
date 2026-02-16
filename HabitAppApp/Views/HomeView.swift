@@ -14,6 +14,7 @@ struct HomeView: View {
     @State private var showBiometricSheet = false
     @State private var navigateToPastLogs = false
     @State private var navigateToDataDisplay = false
+    @State private var navigateToGoals = false
     @State private var showTimerSheet = false
     @State private var timerSheetActivity: Activity?  // Capture activity for timer sheet
     @State private var iconIndex = 0
@@ -104,6 +105,11 @@ struct HomeView: View {
                             action: { navigateToPastLogs = true }
                         )
                         NavigationButton(
+                            icon: "target",
+                            title: "Goals",
+                            action: { navigateToGoals = true }
+                        )
+                        NavigationButton(
                             icon: "chart.bar.fill",
                             title: "Analytics",
                             action: { navigateToDataDisplay = true }
@@ -155,6 +161,9 @@ struct HomeView: View {
             }
             .navigationDestination(isPresented: $navigateToPastLogs) {
                 PastLogsView()
+            }
+            .navigationDestination(isPresented: $navigateToGoals) {
+                GoalsView()
             }
             .navigationDestination(isPresented: $navigateToDataDisplay) {
                 DataDisplayView()

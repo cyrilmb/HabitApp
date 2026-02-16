@@ -414,6 +414,50 @@ class FirebaseService: ObservableObject {
             .delete()
     }
     
+    // MARK: - Goal Operations
+
+    func saveGoal(_ goal: Goal) async throws {
+        let goalRef = db.collection("users").document(userId).collection("goals")
+
+        if let id = goal.id {
+            try goalRef.document(id).setData(from: goal, merge: true)
+        } else {
+            _ = try goalRef.addDocument(from: goal)
+        }
+        invalidateCache(for: "goals")
+    }
+
+    func fetchGoals(for categoryType: GoalCategoryType? = nil) async throws -> [Goal] {
+        let key = cacheKey("goals", type: categoryType?.rawValue)
+        if let entry = getCachedValue(for: key), entry.isValid, let data = entry.data as? [Goal] {
+            return data
+        }
+
+        var query: Query = db.collection("users")
+            .document(userId)
+            .collection("goals")
+
+        if let categoryType = categoryType {
+            query = query.whereField("categoryType", isEqualTo: categoryType.rawValue)
+        }
+
+        let snapshot = try await query.getDocuments()
+        let results = snapshot.documents.compactMap { try? $0.data(as: Goal.self) }
+        setCachedValue(CacheEntry(data: results, timestamp: Date()), for: key)
+        return results
+    }
+
+    func deleteGoal(_ goalId: String) async throws {
+        try await db.collection("users")
+            .document(userId)
+            .collection("goals")
+            .document(goalId)
+            .delete()
+        invalidateCache(for: "goals")
+    }
+
+    // MARK: - Activity Category Management
+
     func deleteActivitiesByCategory(_ categoryName: String) async throws {
         let snapshot = try await db.collection("users")
             .document(userId)
