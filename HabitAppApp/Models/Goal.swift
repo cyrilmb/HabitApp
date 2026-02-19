@@ -50,6 +50,12 @@ enum GoalComparison: String, Codable, CaseIterable {
     case atLeast, atMost, exactly
 }
 
+/// UI-only enum for substance goal input mode (not persisted)
+enum SubstanceGoalMode: String {
+    case frequency  // unit = "times"
+    case dosage     // unit = dosage unit like "mg", "drinks"
+}
+
 enum GoalPeriod: String, Codable, CaseIterable {
     case daily, weekly, monthly, yearly
 

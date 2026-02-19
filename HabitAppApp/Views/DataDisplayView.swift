@@ -282,25 +282,30 @@ struct DataDisplayView: View {
                     .frame(height: 250)
                     .chartAngleSelection(value: $selectedPieActivity)
                     .chartLegend(.hidden)
-                    .overlay {
+                    .overlay(alignment: .topTrailing) {
                         if let name = selectedPieActivity,
                            let item = viewModel.activityTimeData.first(where: { $0.name == name }) {
                             let total = viewModel.activityTimeData.reduce(0.0) { $0 + $1.hours }
                             let pct = total > 0 ? (item.hours / total) * 100 : 0
-                            VStack(spacing: 2) {
+                            VStack(alignment: .trailing, spacing: 4) {
                                 Text(name)
                                     .font(.caption)
                                     .fontWeight(.semibold)
                                 Text(String(format: "%.1fh", item.hours))
                                     .font(.title3)
                                     .fontWeight(.bold)
-                                Text("\(item.count) sessions")
+                                Text("\(item.count) session\(item.count == 1 ? "" : "s")")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                                 Text(String(format: "%.0f%%", pct))
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
+                            .padding(8)
+                            .background(Color(.systemBackground))
+                            .cornerRadius(8)
+                            .shadow(radius: 3)
+                            .padding(8)
                         }
                     }
 
@@ -340,26 +345,40 @@ struct DataDisplayView: View {
                         }
                     }
 
-                    Chart(filteredTrendData) { item in
-                        LineMark(
-                            x: .value("Date", item.date),
-                            y: .value("Minutes", item.minutes)
-                        )
-                        .foregroundStyle(trendLineColor(for: item.categoryName))
-                        .interpolationMethod(.catmullRom)
-
-                        AreaMark(
-                            x: .value("Date", item.date),
-                            y: .value("Minutes", item.minutes)
-                        )
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [trendLineColor(for: item.categoryName).opacity(0.3), trendLineColor(for: item.categoryName).opacity(0.0)],
-                                startPoint: .top,
-                                endPoint: .bottom
+                    Chart {
+                        ForEach(filteredTrendData) { item in
+                            LineMark(
+                                x: .value("Date", item.date),
+                                y: .value("Minutes", item.minutes)
                             )
-                        )
-                        .interpolationMethod(.catmullRom)
+                            .foregroundStyle(trendLineColor(for: item.categoryName))
+                            .interpolationMethod(.catmullRom)
+
+                            AreaMark(
+                                x: .value("Date", item.date),
+                                y: .value("Minutes", item.minutes)
+                            )
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [trendLineColor(for: item.categoryName).opacity(0.3), trendLineColor(for: item.categoryName).opacity(0.0)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .interpolationMethod(.catmullRom)
+                        }
+
+                        // Goal lines (convert hours → minutes to match y-axis)
+                        ForEach(activityGoalsForTrend, id: \.id) { goal in
+                            RuleMark(y: .value("Goal", goalValueInMinutes(goal)))
+                                .foregroundStyle(goalLineColor(for: goal))
+                                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                                .annotation(position: .top, alignment: .trailing) {
+                                    Text(goalAnnotation(for: goal))
+                                        .font(.caption2)
+                                        .foregroundColor(goalLineColor(for: goal))
+                                }
+                        }
                     }
                     .frame(height: 200)
                     .chartXAxis {
@@ -454,26 +473,40 @@ struct DataDisplayView: View {
             // Trend line (filtered)
             if !viewModel.filteredSubstanceTrendData.isEmpty {
                 ChartCard(title: "Usage Trend") {
-                    Chart(viewModel.filteredSubstanceTrendData) { item in
-                        LineMark(
-                            x: .value("Date", item.date),
-                            y: .value("Count", item.count)
-                        )
-                        .foregroundStyle(Color.purple.gradient)
-                        .interpolationMethod(.catmullRom)
-                        
-                        AreaMark(
-                            x: .value("Date", item.date),
-                            y: .value("Count", item.count)
-                        )
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color.purple.opacity(0.3), Color.purple.opacity(0.0)],
-                                startPoint: .top,
-                                endPoint: .bottom
+                    Chart {
+                        ForEach(viewModel.filteredSubstanceTrendData) { item in
+                            LineMark(
+                                x: .value("Date", item.date),
+                                y: .value("Count", item.count)
                             )
-                        )
-                        .interpolationMethod(.catmullRom)
+                            .foregroundStyle(Color.purple.gradient)
+                            .interpolationMethod(.catmullRom)
+
+                            AreaMark(
+                                x: .value("Date", item.date),
+                                y: .value("Count", item.count)
+                            )
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.purple.opacity(0.3), Color.purple.opacity(0.0)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .interpolationMethod(.catmullRom)
+                        }
+
+                        // Substance goal lines (frequency goals with unit "times")
+                        ForEach(substanceFrequencyGoals, id: \.id) { goal in
+                            RuleMark(y: .value("Goal", goal.value))
+                                .foregroundStyle(goalLineColor(for: goal))
+                                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                                .annotation(position: .top, alignment: .trailing) {
+                                    Text(goalAnnotation(for: goal))
+                                        .font(.caption2)
+                                        .foregroundColor(goalLineColor(for: goal))
+                                }
+                        }
                     }
                     .frame(height: 200)
                     .chartXAxis {
@@ -592,27 +625,41 @@ struct DataDisplayView: View {
             // Weight Trend
             if !viewModel.weightTrendData.isEmpty {
                 ChartCard(title: "Weight Trend") {
-                    Chart(viewModel.weightTrendData) { item in
-                        LineMark(
-                            x: .value("Date", item.date),
-                            y: .value("Weight", item.value)
-                        )
-                        .foregroundStyle(Color.green.gradient)
-                        .interpolationMethod(.catmullRom)
-                        .symbol(Circle())
-                        
-                        AreaMark(
-                            x: .value("Date", item.date),
-                            y: .value("Weight", item.value)
-                        )
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color.green.opacity(0.3), Color.green.opacity(0.0)],
-                                startPoint: .top,
-                                endPoint: .bottom
+                    Chart {
+                        ForEach(viewModel.weightTrendData) { item in
+                            LineMark(
+                                x: .value("Date", item.date),
+                                y: .value("Weight", item.value)
                             )
-                        )
-                        .interpolationMethod(.catmullRom)
+                            .foregroundStyle(Color.green.gradient)
+                            .interpolationMethod(.catmullRom)
+                            .symbol(Circle())
+
+                            AreaMark(
+                                x: .value("Date", item.date),
+                                y: .value("Weight", item.value)
+                            )
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [Color.green.opacity(0.3), Color.green.opacity(0.0)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .interpolationMethod(.catmullRom)
+                        }
+
+                        // Weight goal lines
+                        ForEach(goalsFor(type: .biometric, name: BiometricType.weight.rawValue), id: \.id) { goal in
+                            RuleMark(y: .value("Goal", weightGoalChartValue(goal)))
+                                .foregroundStyle(goalLineColor(for: goal))
+                                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                                .annotation(position: .top, alignment: .trailing) {
+                                    Text(goalAnnotation(for: goal))
+                                        .font(.caption2)
+                                        .foregroundColor(goalLineColor(for: goal))
+                                }
+                        }
                     }
                     .frame(height: 200)
                     .chartYScale(domain: .automatic(includesZero: false))
@@ -628,13 +675,27 @@ struct DataDisplayView: View {
             // Sleep Duration Trend
             if !viewModel.sleepTrendData.isEmpty {
                 ChartCard(title: "Sleep Duration") {
-                    Chart(viewModel.sleepTrendData) { item in
-                        BarMark(
-                            x: .value("Date", item.date, unit: .day),
-                            y: .value("Hours", item.value)
-                        )
-                        .foregroundStyle(Color.blue.gradient)
-                        .cornerRadius(4)
+                    Chart {
+                        ForEach(viewModel.sleepTrendData) { item in
+                            BarMark(
+                                x: .value("Date", item.date, unit: .day),
+                                y: .value("Hours", item.value)
+                            )
+                            .foregroundStyle(Color.blue.gradient)
+                            .cornerRadius(4)
+                        }
+
+                        // Sleep duration goal lines
+                        ForEach(goalsFor(type: .biometric, name: BiometricType.sleepDuration.rawValue), id: \.id) { goal in
+                            RuleMark(y: .value("Goal", goal.value))
+                                .foregroundStyle(goalLineColor(for: goal))
+                                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                                .annotation(position: .top, alignment: .trailing) {
+                                    Text(goalAnnotation(for: goal))
+                                        .font(.caption2)
+                                        .foregroundColor(goalLineColor(for: goal))
+                                }
+                        }
                     }
                     .frame(height: 200)
                     .chartXAxis {
@@ -654,14 +715,40 @@ struct DataDisplayView: View {
                 let yAxisValues = Array(stride(from: Int(domainMin), through: Int(domainMax), by: 2))
 
                 ChartCard(title: "Bed & Wake Times") {
-                    Chart(viewModel.bedWakeTimeData) { item in
-                        LineMark(
-                            x: .value("Date", item.date, unit: .day),
-                            y: .value("Hour", item.hour)
-                        )
-                        .foregroundStyle(by: .value("Type", item.type))
-                        .symbol(Circle())
-                        .lineStyle(StrokeStyle(lineWidth: 2))
+                    Chart {
+                        ForEach(viewModel.bedWakeTimeData) { item in
+                            LineMark(
+                                x: .value("Date", item.date, unit: .day),
+                                y: .value("Hour", item.hour)
+                            )
+                            .foregroundStyle(by: .value("Type", item.type))
+                            .symbol(Circle())
+                            .lineStyle(StrokeStyle(lineWidth: 2))
+                        }
+
+                        // Bed time goal line
+                        ForEach(goalsFor(type: .biometric, name: BiometricType.bedTime.rawValue), id: \.id) { goal in
+                            RuleMark(y: .value("Goal", bedTimeGoalChartHour(goal)))
+                                .foregroundStyle(goalLineColor(for: goal))
+                                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                                .annotation(position: .top, alignment: .trailing) {
+                                    Text(goalAnnotation(for: goal))
+                                        .font(.caption2)
+                                        .foregroundColor(goalLineColor(for: goal))
+                                }
+                        }
+
+                        // Wake time goal line
+                        ForEach(goalsFor(type: .biometric, name: BiometricType.wakeTime.rawValue), id: \.id) { goal in
+                            RuleMark(y: .value("Goal", goal.value))
+                                .foregroundStyle(goalLineColor(for: goal))
+                                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                                .annotation(position: .bottom, alignment: .trailing) {
+                                    Text(goalAnnotation(for: goal))
+                                        .font(.caption2)
+                                        .foregroundColor(goalLineColor(for: goal))
+                                }
+                        }
                     }
                     .frame(height: 250)
                     .chartYScale(domain: domainMin...domainMax)
@@ -700,6 +787,20 @@ struct DataDisplayView: View {
                         RuleMark(y: .value("Zero", 0))
                             .foregroundStyle(Color.secondary.opacity(0.3))
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [4]))
+
+                        // Mood goal crosshairs — pleasantness (vertical)
+                        ForEach(moodPleasantnessGoals, id: \.id) { goal in
+                            RuleMark(x: .value("Goal", goal.value))
+                                .foregroundStyle(Color.orange.opacity(0.7))
+                                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                        }
+
+                        // Mood goal crosshairs — energy (horizontal)
+                        ForEach(moodEnergyGoals, id: \.id) { goal in
+                            RuleMark(y: .value("Goal", goal.value))
+                                .foregroundStyle(Color.blue.opacity(0.7))
+                                .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                        }
 
                         ForEach(viewModel.moodScatterData) { point in
                             PointMark(
@@ -749,6 +850,30 @@ struct DataDisplayView: View {
                                 .interpolationMethod(.catmullRom)
                                 .symbol(Circle())
                                 .lineStyle(StrokeStyle(lineWidth: 2))
+                            }
+
+                            // Mood pleasantness goal lines
+                            ForEach(moodPleasantnessGoals, id: \.id) { goal in
+                                RuleMark(y: .value("Goal", goal.value))
+                                    .foregroundStyle(Color.orange)
+                                    .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                                    .annotation(position: .top, alignment: .trailing) {
+                                        Text(goalAnnotation(for: goal))
+                                            .font(.caption2)
+                                            .foregroundColor(.orange)
+                                    }
+                            }
+
+                            // Mood energy goal lines
+                            ForEach(moodEnergyGoals, id: \.id) { goal in
+                                RuleMark(y: .value("Goal", goal.value))
+                                    .foregroundStyle(Color.blue)
+                                    .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+                                    .annotation(position: .top, alignment: .leading) {
+                                        Text(goalAnnotation(for: goal))
+                                            .font(.caption2)
+                                            .foregroundColor(.blue)
+                                    }
                             }
                         }
                         .frame(height: 200)
@@ -892,6 +1017,77 @@ struct DataDisplayView: View {
             )
         }
         .padding(.horizontal)
+    }
+
+    // MARK: - Goal Line Helpers
+
+    /// Returns active goals matching a category type and optionally a specific category name.
+    private func goalsFor(type: GoalCategoryType, name: String? = nil) -> [Goal] {
+        viewModel.goalProgressItems
+            .map(\.goal)
+            .filter { $0.categoryType == type && $0.isActive && (name == nil || $0.categoryName == name) }
+    }
+
+    /// Color for a goal line — green for targets, orange for limits.
+    private func goalLineColor(for goal: Goal) -> Color {
+        goal.kind == .target ? .green : .orange
+    }
+
+    /// Annotation label for a goal line, including the goal's category name.
+    private func goalAnnotation(for goal: Goal) -> String {
+        let comp: String
+        switch goal.comparison {
+        case .atLeast: comp = "\u{2265}"
+        case .atMost: comp = "\u{2264}"
+        case .exactly: comp = "="
+        }
+        let formatted = GoalFormatters.formatGoalValue(goal.value, goal: goal)
+        let unitText = GoalFormatters.formatGoalUnit(goal)
+        let valueStr = "\(comp) \(formatted)\(unitText.isEmpty ? "" : " \(unitText)")"
+        return "\(goal.categoryName): \(valueStr)"
+    }
+
+    /// Substance goals filtered for the current category selection and unit type "times".
+    /// Returns empty when "All" is selected — goal lines only show for a specific category.
+    private var substanceFrequencyGoals: [Goal] {
+        guard viewModel.selectedSubstanceCategory != "All" else { return [] }
+        return goalsFor(type: .substance, name: viewModel.selectedSubstanceCategory)
+            .filter { $0.unit == "times" }
+    }
+
+    /// Activity goals filtered for the current trend filter.
+    /// Returns empty when "All" is selected — goal lines only show for a specific activity.
+    private var activityGoalsForTrend: [Goal] {
+        guard trendFilterActivity != "All" else { return [] }
+        return goalsFor(type: .activity, name: trendFilterActivity)
+    }
+
+    /// Convert a goal's value to minutes for the activity trend chart y-axis.
+    private func goalValueInMinutes(_ goal: Goal) -> Double {
+        goal.unit == "hours" ? goal.value * 60 : goal.value
+    }
+
+    /// Convert a weight goal value to match the chart's unit (assumes chart data is in lbs).
+    private func weightGoalChartValue(_ goal: Goal) -> Double {
+        if goal.unit == "kg" { return GoalFormatters.kgToLbs(goal.value) }
+        return goal.value
+    }
+
+    /// For bed time goals, adjust to 24+ range if before noon (after-midnight bed times).
+    private func bedTimeGoalChartHour(_ goal: Goal) -> Double {
+        goal.value < 12 ? goal.value + 24 : goal.value
+    }
+
+    /// Mood goals filtered to pleasantness axis only.
+    private var moodPleasantnessGoals: [Goal] {
+        goalsFor(type: .biometric, name: BiometricType.mood.rawValue)
+            .filter { $0.unit == "pleasantness" }
+    }
+
+    /// Mood goals filtered to energy axis only.
+    private var moodEnergyGoals: [Goal] {
+        goalsFor(type: .biometric, name: BiometricType.mood.rawValue)
+            .filter { $0.unit == "energy" }
     }
 
     // MARK: - Activity Trend Helpers

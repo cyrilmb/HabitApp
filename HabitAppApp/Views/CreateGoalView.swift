@@ -26,20 +26,75 @@ struct CreateGoalView: View {
     @State private var unit: String = ""
     @State private var period: GoalPeriod = .daily
     @State private var hasPeriod = true
+    @State private var isSaving = false
+    @State private var errorMessage: String?
 
-    let onSave: (Goal) -> Void
+    // Specialized inputs
+    @State private var durationHours: Int = 0
+    @State private var durationMinutes: Int = 0
+    @State private var substanceMode: SubstanceGoalMode = .frequency
+    @State private var selectedDrugCategory: DrugCategory?
+    @State private var weightUnit: String = "lbs"
+    @State private var selectedTime: Date = GoalFormatters.dateFromFractionalHours(22.0)
+    @State private var sleepHours: Int = 8
+    @State private var sleepMinutes: Int = 0
+    @State private var moodAxis: String = "pleasantness"
+    @State private var moodValue: Double = 0.5
 
     var body: some View {
         NavigationStack {
-            Form {
-                switch step {
-                case 1:
-                    step1CategoryType
-                case 2:
-                    step2CategoryPicker
-                default:
-                    step3GoalDetails
+            VStack(spacing: 0) {
+                Form {
+                    switch step {
+                    case 1:
+                        step1CategoryType
+                    case 2:
+                        step2CategoryPicker
+                    default:
+                        step3GoalDetails
+                    }
                 }
+
+                // Bottom action buttons
+                VStack(spacing: 12) {
+                    if step < 3 {
+                        Button {
+                            step += 1
+                        } label: {
+                            Text("Next")
+                                .font(.headline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canAdvance)
+                    } else {
+                        Button {
+                            Task { await saveGoal() }
+                        } label: {
+                            if isSaving {
+                                ProgressView()
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 14)
+                            } else {
+                                Text("Save Goal")
+                                    .font(.headline)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 14)
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!canSave || isSaving)
+                    }
+
+                    if step > 1 {
+                        Button("Back") { step -= 1 }
+                            .font(.subheadline)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(Color(.systemGroupedBackground))
             }
             .navigationTitle(stepTitle)
             .navigationBarTitleDisplayMode(.inline)
@@ -47,22 +102,16 @@ struct CreateGoalView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    if step < 3 {
-                        Button("Next") { step += 1 }
-                            .disabled(!canAdvance)
-                    } else {
-                        Button("Save") { saveGoal() }
-                            .disabled(!canSave)
-                    }
-                }
-                if step > 1 {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Back") { step -= 1 }
-                    }
-                }
             }
             .task { await loadCategories() }
+            .alert("Error", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK") { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
         }
     }
 
@@ -135,7 +184,9 @@ struct CreateGoalView: View {
                         .contentShape(Rectangle())
                         .onTapGesture {
                             categoryName = cat.name
+                            selectedDrugCategory = cat
                             unit = cat.defaultDosageUnit ?? "times"
+                            substanceMode = (cat.defaultDosageUnit != nil) ? .dosage : .frequency
                         }
                     }
                 }
@@ -154,7 +205,7 @@ struct CreateGoalView: View {
                     .contentShape(Rectangle())
                     .onTapGesture {
                         categoryName = type.rawValue
-                        unit = type.defaultUnit
+                        applyBiometricDefaults(for: type)
                     }
                 }
             }
@@ -194,18 +245,8 @@ struct CreateGoalView: View {
                 Text("Comparison")
             }
 
-            // Value & Unit
-            Section {
-                HStack {
-                    TextField("Value", text: $value)
-                        .keyboardType(.decimalPad)
-                    Text(unit)
-                        .foregroundColor(.secondary)
-                }
-                TextField("Unit", text: $unit)
-            } header: {
-                Text("Goal Value")
-            }
+            // Specialized value input
+            valueInputSection
 
             // Period
             if categoryType == .biometric {
@@ -237,6 +278,185 @@ struct CreateGoalView: View {
         }
     }
 
+    // MARK: - Specialized Value Inputs
+
+    @ViewBuilder
+    private var valueInputSection: some View {
+        let biometricType = BiometricType(rawValue: categoryName)
+
+        if categoryType == .activity {
+            activityDurationInput
+        } else if categoryType == .substance {
+            substanceInput
+        } else if biometricType == .bedTime || biometricType == .wakeTime {
+            timeOfDayInput
+        } else if biometricType == .sleepDuration {
+            sleepDurationInput
+        } else if biometricType == .weight {
+            weightInput
+        } else if biometricType == .mood {
+            moodInput
+        } else {
+            genericValueInput
+        }
+    }
+
+    private var activityDurationInput: some View {
+        Section {
+            HStack {
+                Picker("Hours", selection: $durationHours) {
+                    ForEach(0...24, id: \.self) { h in
+                        Text("\(h)h").tag(h)
+                    }
+                }
+                .pickerStyle(.wheel)
+                .frame(maxWidth: .infinity)
+
+                Picker("Minutes", selection: $durationMinutes) {
+                    ForEach(Array(stride(from: 0, through: 55, by: 5)), id: \.self) { m in
+                        Text("\(m)m").tag(m)
+                    }
+                }
+                .pickerStyle(.wheel)
+                .frame(maxWidth: .infinity)
+            }
+            .frame(height: 120)
+        } header: {
+            Text("Duration")
+        }
+    }
+
+    private var substanceInput: some View {
+        Section {
+            if selectedDrugCategory?.defaultDosageUnit != nil {
+                Picker("Mode", selection: $substanceMode) {
+                    Text("Frequency").tag(SubstanceGoalMode.frequency)
+                    Text("Dosage").tag(SubstanceGoalMode.dosage)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: substanceMode) { _, newMode in
+                    if newMode == .frequency {
+                        unit = "times"
+                    } else {
+                        unit = selectedDrugCategory?.defaultDosageUnit ?? "mg"
+                    }
+                    value = ""
+                }
+            }
+
+            HStack {
+                TextField("Value", text: $value)
+                    .keyboardType(.decimalPad)
+                Text(substanceMode == .frequency ? "times" : (selectedDrugCategory?.defaultDosageUnit ?? unit))
+                    .foregroundColor(.secondary)
+            }
+        } header: {
+            Text("Goal Value")
+        }
+    }
+
+    private var timeOfDayInput: some View {
+        Section {
+            DatePicker(
+                "Time",
+                selection: $selectedTime,
+                displayedComponents: .hourAndMinute
+            )
+            .datePickerStyle(.wheel)
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
+        } header: {
+            let biometricType = BiometricType(rawValue: categoryName)
+            Text(biometricType == .bedTime ? "Bed Time" : "Wake Time")
+        }
+    }
+
+    private var sleepDurationInput: some View {
+        Section {
+            HStack {
+                Picker("Hours", selection: $sleepHours) {
+                    ForEach(0...16, id: \.self) { h in
+                        Text("\(h)h").tag(h)
+                    }
+                }
+                .pickerStyle(.wheel)
+                .frame(maxWidth: .infinity)
+
+                Picker("Minutes", selection: $sleepMinutes) {
+                    ForEach(Array(stride(from: 0, through: 55, by: 5)), id: \.self) { m in
+                        Text("\(m)m").tag(m)
+                    }
+                }
+                .pickerStyle(.wheel)
+                .frame(maxWidth: .infinity)
+            }
+            .frame(height: 120)
+        } header: {
+            Text("Sleep Duration")
+        }
+    }
+
+    private var weightInput: some View {
+        Section {
+            Picker("Unit", selection: $weightUnit) {
+                Text("lbs").tag("lbs")
+                Text("kg").tag("kg")
+            }
+            .pickerStyle(.segmented)
+
+            HStack {
+                TextField("Weight", text: $value)
+                    .keyboardType(.decimalPad)
+                Text(weightUnit)
+                    .foregroundColor(.secondary)
+            }
+        } header: {
+            Text("Target Weight")
+        }
+    }
+
+    private var moodInput: some View {
+        Section {
+            Picker("Axis", selection: $moodAxis) {
+                Text("Pleasantness").tag("pleasantness")
+                Text("Energy").tag("energy")
+            }
+            .pickerStyle(.segmented)
+
+            VStack(spacing: 8) {
+                HStack {
+                    Text(moodAxis == "pleasantness" ? "Unpleasant" : "Low Energy")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                    Text(String(format: "%+.2f", moodValue))
+                        .font(.headline)
+                        .monospacedDigit()
+                    Spacer()
+                    Text(moodAxis == "pleasantness" ? "Pleasant" : "High Energy")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Slider(value: $moodValue, in: -1...1, step: 0.05)
+            }
+        } header: {
+            Text("Mood Target")
+        }
+    }
+
+    private var genericValueInput: some View {
+        Section {
+            HStack {
+                TextField("Value", text: $value)
+                    .keyboardType(.decimalPad)
+                Text(unit)
+                    .foregroundColor(.secondary)
+            }
+        } header: {
+            Text("Goal Value")
+        }
+    }
+
     // MARK: - Logic
 
     private var stepTitle: String {
@@ -256,8 +476,27 @@ struct CreateGoalView: View {
     }
 
     private var canSave: Bool {
-        guard let val = Double(value), val > 0 else { return false }
-        return !categoryName.isEmpty && !unit.isEmpty
+        let biometricType = BiometricType(rawValue: categoryName)
+        guard !categoryName.isEmpty else { return false }
+
+        if categoryType == .activity {
+            return true
+        } else if categoryType == .substance {
+            guard let val = Double(value), val >= 0 else { return false }
+            return true
+        } else if biometricType == .bedTime || biometricType == .wakeTime {
+            return true // DatePicker always valid
+        } else if biometricType == .sleepDuration {
+            return true
+        } else if biometricType == .weight {
+            guard let val = Double(value), val >= 0 else { return false }
+            return true
+        } else if biometricType == .mood {
+            return true // Slider always valid
+        } else {
+            guard let val = Double(value), val >= 0 else { return false }
+            return !unit.isEmpty
+        }
     }
 
     private func applyDefaults(for type: GoalCategoryType) {
@@ -267,16 +506,56 @@ struct CreateGoalView: View {
             comparison = .atLeast
             unit = "hours"
             hasPeriod = true
+            durationHours = 1
+            durationMinutes = 0
         case .substance:
             kind = .limit
             comparison = .atMost
             unit = "times"
             hasPeriod = true
+            substanceMode = .frequency
         case .biometric:
             kind = .target
             comparison = .atLeast
             unit = ""
             hasPeriod = false
+        }
+    }
+
+    private func applyBiometricDefaults(for type: BiometricType) {
+        unit = type.defaultUnit
+        switch type {
+        case .bedTime:
+            selectedTime = GoalFormatters.dateFromFractionalHours(22.0) // 10:00 PM
+            comparison = .atMost
+            kind = .target
+            hasPeriod = true
+            period = .daily
+        case .wakeTime:
+            selectedTime = GoalFormatters.dateFromFractionalHours(7.0) // 7:00 AM
+            comparison = .atMost
+            kind = .target
+            hasPeriod = true
+            period = .daily
+        case .sleepDuration:
+            sleepHours = 8
+            sleepMinutes = 0
+            comparison = .atLeast
+            kind = .target
+            hasPeriod = true
+            period = .daily
+        case .weight:
+            weightUnit = "lbs"
+            hasPeriod = false
+        case .mood:
+            moodAxis = "pleasantness"
+            moodValue = 0.5
+            comparison = .atLeast
+            kind = .target
+            hasPeriod = true
+            period = .daily
+        default:
+            break
         }
     }
 
@@ -313,19 +592,54 @@ struct CreateGoalView: View {
         }
     }
 
-    private func saveGoal() {
-        guard let val = Double(value) else { return }
+    private func saveGoal() async {
+        let biometricType = BiometricType(rawValue: categoryName)
+        let finalValue: Double
+        let finalUnit: String
+
+        if categoryType == .activity {
+            finalValue = GoalFormatters.decimalHoursFromComponents(hours: durationHours, minutes: durationMinutes)
+            finalUnit = "hours"
+        } else if categoryType == .substance {
+            guard let val = Double(value) else { return }
+            finalValue = val
+            finalUnit = substanceMode == .frequency ? "times" : (selectedDrugCategory?.defaultDosageUnit ?? unit)
+        } else if biometricType == .bedTime || biometricType == .wakeTime {
+            finalValue = GoalFormatters.fractionalHoursFromDate(selectedTime)
+            finalUnit = "time"
+        } else if biometricType == .sleepDuration {
+            finalValue = GoalFormatters.decimalHoursFromComponents(hours: sleepHours, minutes: sleepMinutes)
+            finalUnit = "hours"
+        } else if biometricType == .weight {
+            guard let val = Double(value) else { return }
+            finalValue = val
+            finalUnit = weightUnit
+        } else if biometricType == .mood {
+            finalValue = moodValue
+            finalUnit = moodAxis
+        } else {
+            guard let val = Double(value) else { return }
+            finalValue = val
+            finalUnit = unit
+        }
+
         let goal = Goal(
             userId: FirebaseService.shared.userId,
             categoryType: categoryType,
             categoryName: categoryName,
             kind: kind,
             comparison: comparison,
-            value: val,
-            unit: unit,
+            value: finalValue,
+            unit: finalUnit,
             period: (categoryType == .biometric && !hasPeriod) ? nil : period
         )
-        onSave(goal)
-        dismiss()
+        isSaving = true
+        do {
+            try await FirebaseService.shared.saveGoal(goal)
+            dismiss()
+        } catch {
+            errorMessage = "Failed to save goal: \(error.localizedDescription)"
+            isSaving = false
+        }
     }
 }

@@ -32,15 +32,11 @@ struct GoalsView: View {
                 }
             }
         }
-        .sheet(isPresented: $showCreateGoal) {
-            CreateGoalView { goal in
-                Task { await saveAndReload(goal) }
-            }
+        .sheet(isPresented: $showCreateGoal, onDismiss: { Task { await loadGoals() } }) {
+            CreateGoalView()
         }
-        .sheet(item: $goalToEdit) { goal in
-            EditGoalView(goal: goal) { updated in
-                Task { await saveAndReload(updated) }
-            }
+        .sheet(item: $goalToEdit, onDismiss: { Task { await loadGoals() } }) { goal in
+            EditGoalView(goal: goal)
         }
         .task { await loadGoals() }
     }
@@ -110,15 +106,6 @@ struct GoalsView: View {
         } catch {
             print("Error loading goals: \(error)")
             isLoading = false
-        }
-    }
-
-    private func saveAndReload(_ goal: Goal) async {
-        do {
-            try await FirebaseService.shared.saveGoal(goal)
-            await loadGoals()
-        } catch {
-            print("Error saving goal: \(error)")
         }
     }
 
@@ -212,13 +199,12 @@ struct GoalRow: View {
         case .exactly: comparisonText = "Exactly"
         }
 
-        let valueText: String
-        if goal.value == floor(goal.value) {
-            valueText = String(format: "%.0f", goal.value)
-        } else {
-            valueText = String(format: "%.1f", goal.value)
-        }
+        let valueText = GoalFormatters.formatGoalValue(goal.value, goal: goal)
+        let unitText = GoalFormatters.formatGoalUnit(goal)
 
-        return "\(comparisonText) \(valueText) \(goal.unit)"
+        if unitText.isEmpty {
+            return "\(comparisonText) \(valueText)"
+        }
+        return "\(comparisonText) \(valueText) \(unitText)"
     }
 }

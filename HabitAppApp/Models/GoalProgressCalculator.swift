@@ -30,7 +30,13 @@ enum GoalProgressCalculator {
         }
 
         let fraction: Double
-        if goal.value > 0 {
+        let biometricType = BiometricType(rawValue: goal.categoryName)
+        if goal.unit == "time" || biometricType == .bedTime || biometricType == .wakeTime {
+            // Time-of-day: fraction based on proximity (within 3h = 0%, exact = 100%)
+            let maxDeviation = 3.0 // hours
+            let diff = abs(normalizeTimeDiff(currentValue, goal.value))
+            fraction = max(0, 1.0 - diff / maxDeviation)
+        } else if goal.value != 0 {
             fraction = currentValue / goal.value
         } else {
             fraction = 0
@@ -88,26 +94,77 @@ enum GoalProgressCalculator {
         let matching: [Biometric]
 
         if goal.period != nil {
-            // Periodic: filter by time window
             matching = biometrics.filter {
                 $0.type == matchingType && $0.timestamp >= start && $0.timestamp < end
             }
         } else {
-            // One-time: use most recent value
             matching = biometrics.filter { $0.type == matchingType }
         }
 
         guard !matching.isEmpty else { return 0 }
 
+        // Bed/Wake time: extract time-of-day from timestamp
+        if matchingType == .bedTime || matchingType == .wakeTime || goal.unit == "time" {
+            let times = matching.map { GoalFormatters.fractionalHoursFromDate($0.timestamp) }
+            return averageTimeOfDay(times, isBedTime: matchingType == .bedTime)
+        }
+
+        // Mood: support energy axis via secondaryValue
+        if matchingType == .mood && goal.unit == "energy" {
+            let values = matching.compactMap { $0.secondaryValue }
+            guard !values.isEmpty else { return 0 }
+            return values.reduce(0, +) / Double(values.count)
+        }
+
+        // Weight: convert units if needed
+        if matchingType == .weight {
+            let extractValue: (Biometric) -> Double = { bio in
+                // Biometric data stored in its own unit; convert if goal unit differs
+                if goal.unit == "kg" && bio.unit == "lbs" {
+                    return GoalFormatters.lbsToKg(bio.value)
+                } else if goal.unit == "lbs" && bio.unit == "kg" {
+                    return GoalFormatters.kgToLbs(bio.value)
+                }
+                return bio.value
+            }
+
+            if goal.period == nil {
+                let sorted = matching.sorted { $0.timestamp > $1.timestamp }
+                return extractValue(sorted.first!)
+            } else {
+                let sum = matching.reduce(0.0) { $0 + extractValue($1) }
+                return sum / Double(matching.count)
+            }
+        }
+
         if goal.period == nil {
-            // One-time: return latest value
             let sorted = matching.sorted { $0.timestamp > $1.timestamp }
             return sorted.first?.value ?? 0
         } else {
-            // Periodic: return average
             let sum = matching.reduce(0.0) { $0 + $1.value }
             return sum / Double(matching.count)
         }
+    }
+
+    /// Average time-of-day values, handling midnight crossing for bed times
+    private static func averageTimeOfDay(_ times: [Double], isBedTime: Bool) -> Double {
+        guard !times.isEmpty else { return 0 }
+        if isBedTime {
+            // Normalize: values < 6 hours are after-midnight bed times, shift by +24
+            let normalized = times.map { $0 < 6 ? $0 + 24 : $0 }
+            let avg = normalized.reduce(0, +) / Double(normalized.count)
+            return avg.truncatingRemainder(dividingBy: 24)
+        } else {
+            return times.reduce(0, +) / Double(times.count)
+        }
+    }
+
+    /// Shortest difference between two times of day (handles midnight wrap)
+    private static func normalizeTimeDiff(_ a: Double, _ b: Double) -> Double {
+        var diff = a - b
+        if diff > 12 { diff -= 24 }
+        if diff < -12 { diff += 24 }
+        return diff
     }
 
     // MARK: - Period Window

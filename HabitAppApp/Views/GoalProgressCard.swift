@@ -88,19 +88,9 @@ struct GoalProgressCard: View {
     }
 
     private var progressDescription: String {
-        let currentText: String
-        if progress.currentValue == floor(progress.currentValue) {
-            currentText = String(format: "%.0f", progress.currentValue)
-        } else {
-            currentText = String(format: "%.1f", progress.currentValue)
-        }
-
-        let goalText: String
-        if progress.goal.value == floor(progress.goal.value) {
-            goalText = String(format: "%.0f", progress.goal.value)
-        } else {
-            goalText = String(format: "%.1f", progress.goal.value)
-        }
+        let currentText = GoalFormatters.formatGoalValue(progress.currentValue, goal: progress.goal)
+        let goalText = GoalFormatters.formatGoalValue(progress.goal.value, goal: progress.goal)
+        let unitText = GoalFormatters.formatGoalUnit(progress.goal)
 
         let comparisonText: String
         switch progress.goal.comparison {
@@ -109,6 +99,9 @@ struct GoalProgressCard: View {
         case .exactly: comparisonText = "="
         }
 
-        return "\(currentText) / \(comparisonText) \(goalText) \(progress.goal.unit)"
+        if unitText.isEmpty {
+            return "\(currentText) / \(comparisonText) \(goalText)"
+        }
+        return "\(currentText) / \(comparisonText) \(goalText) \(unitText)"
     }
 }
