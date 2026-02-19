@@ -49,12 +49,4 @@ struct DrugCategory: Identifiable, Codable {
         self.createdAt = Date()
     }
     
-    // Predefined common categories
-    static func alcoholCategory(userId: String) -> DrugCategory {
-        DrugCategory(userId: userId, name: "Alcohol", methods: ["Beer", "Wine", "Shot", "Cocktail"], defaultDosageUnit: "drinks")
-    }
-    
-    static func cannabisCategory(userId: String) -> DrugCategory {
-        DrugCategory(userId: userId, name: "Cannabis", methods: ["Joint", "Vape", "Edible", "Pipe"], defaultDosageUnit: "mg")
-    }
 }

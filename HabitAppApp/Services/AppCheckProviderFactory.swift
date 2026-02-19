@@ -16,11 +16,15 @@ import FirebaseAppCheck
 
 class HabitAppCheckProviderFactory: NSObject, AppCheckProviderFactory {
     func createProvider(with app: FirebaseApp) -> (any AppCheckProvider)? {
+        #if DEBUG
+        return AppCheckDebugProvider(app: app)
+        #else
         if #available(iOS 14.0, *) {
             return AppAttestProvider(app: app)
         } else {
             return DeviceCheckProvider(app: app)
         }
+        #endif
     }
 }
 #endif

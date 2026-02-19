@@ -78,10 +78,12 @@ class AnalyticsViewModel: ObservableObject {
                 async let drugLogsTask     = FirebaseService.shared.fetchDrugLogs(since: sinceDate)
                 async let biometricsTask   = FirebaseService.shared.fetchBiometrics(since: sinceDate)
                 async let categoriesTask   = FirebaseService.shared.fetchActivityCategories()
-                async let goalsTask        = FirebaseService.shared.fetchGoals()
 
-                let (fetchedActivities, fetchedDrugLogs, fetchedBiometrics, fetchedCategories, fetchedGoals) =
-                    try await (activitiesTask, drugLogsTask, biometricsTask, categoriesTask, goalsTask)
+                let (fetchedActivities, fetchedDrugLogs, fetchedBiometrics, fetchedCategories) =
+                    try await (activitiesTask, drugLogsTask, biometricsTask, categoriesTask)
+
+                // Fetch goals separately so a failure doesn't break analytics
+                let fetchedGoals = (try? await FirebaseService.shared.fetchGoals()) ?? []
 
                 await MainActor.run { [weak self] in
                     guard let self else { return }

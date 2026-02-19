@@ -236,7 +236,7 @@ class TimerService: ObservableObject {
         content.body = "Your \(activity.categoryName) timer is still running"
         content.sound = .default
 
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: true)
         let request = UNNotificationRequest(identifier: "timer-running", content: content, trigger: trigger)
 
         UNUserNotificationCenter.current().add(request)

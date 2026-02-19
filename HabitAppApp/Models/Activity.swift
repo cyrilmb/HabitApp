@@ -55,12 +55,14 @@ struct ActivityCategory: Identifiable, Codable {
     var userId: String
     var name: String
     var colorHex: String? // Optional color for UI
+    var notificationInterval: TimeInterval? // Optional reminder interval in seconds
     var createdAt: Date
-    
-    init(userId: String, name: String, colorHex: String? = nil) {
+
+    init(userId: String, name: String, colorHex: String? = nil, notificationInterval: TimeInterval? = nil) {
         self.userId = userId
         self.name = name
         self.colorHex = colorHex
+        self.notificationInterval = notificationInterval
         self.createdAt = Date()
     }
 }
