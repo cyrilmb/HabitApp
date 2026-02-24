@@ -173,6 +173,7 @@ struct SubstanceCategoryButton: View {
             .shadow(color: .black.opacity(0.05), radius: 5, y: 2)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(category.name)
     }
 }
 
@@ -194,7 +195,6 @@ class DrugLogViewModel: ObservableObject {
                     self?.isLoading = false
                 }
             } catch {
-                print("Error loading drug categories: \(error)")
                 await MainActor.run { [weak self] in
                     self?.errorMessage = "Failed to load substances."
                     self?.isLoading = false
@@ -210,7 +210,6 @@ class DrugLogViewModel: ObservableObject {
             do {
                 try await FirebaseService.shared.saveDrugCategory(category)
             } catch {
-                print("Error saving drug category: \(error)")
                 await MainActor.run { [weak self] in
                     self?.errorMessage = "Failed to save substance."
                 }

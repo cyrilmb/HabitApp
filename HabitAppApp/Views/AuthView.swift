@@ -35,6 +35,7 @@ struct AuthView: View {
                     Image(systemName: "chart.line.uptrend.xyaxis.circle.fill")
                         .font(.system(size: 100))
                         .foregroundColor(.white)
+                        .accessibilityHidden(true)
 
                     Text("Habit Tracker")
                         .font(.system(size: 42, weight: .bold))
@@ -118,9 +119,11 @@ struct AuthView: View {
             do {
                 let result = try await appleSignInHelper.signIn()
                 try await firebaseService.signInWithApple(idToken: result.idToken, nonce: result.nonce)
+            } catch let error as URLError {
+                errorMessage = "No internet connection. Please check your network and try again."
+                _ = error
             } catch {
-                errorMessage = "Apple sign in failed. Please try again."
-                print("Apple sign in error: \(error.localizedDescription)")
+                errorMessage = "Authentication error. Please try again."
             }
             isAppleLoading = false
         }
@@ -133,9 +136,11 @@ struct AuthView: View {
         Task {
             do {
                 try await firebaseService.signInAnonymously()
+            } catch let error as URLError {
+                errorMessage = "No internet connection. Please check your network and try again."
+                _ = error
             } catch {
-                errorMessage = "Failed to sign in. Please try again."
-                print("Sign in error: \(error.localizedDescription)")
+                errorMessage = "Something went wrong. Please try again."
             }
             isLoading = false
         }

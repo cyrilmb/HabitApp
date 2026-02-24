@@ -16,7 +16,10 @@ struct HomeView: View {
     @State private var navigateToDataDisplay = false
     @State private var navigateToGoals = false
     @State private var showTimerSheet = false
+    @State private var showDailyHabitsSheet = false
     @State private var timerSheetActivity: Activity?  // Capture activity for timer sheet
+    @AppStorage("hasSeenTooltips") private var hasSeenTooltips = false
+    @State private var showTooltips = false
     @State private var iconIndex = 0
     @State private var iconTimer: Timer?
 
@@ -37,86 +40,111 @@ struct HomeView: View {
                 )
                 .ignoresSafeArea()
 
-                VStack(spacing: 30) {
-                    VStack(spacing: 12) {
-                        Image(systemName: cyclingIcons[iconIndex].0)
-                            .font(.system(size: 60))
-                            .foregroundStyle(.indigo)
-                            .frame(width: 80, height: 80)
-                            .contentTransition(.symbolEffect(.replace))
-                            .id(iconIndex)
+                ScrollView {
+                    VStack(spacing: 24) {
+                        VStack(spacing: 12) {
+                            Image(systemName: cyclingIcons[iconIndex].0)
+                                .font(.system(size: 60))
+                                .foregroundStyle(.indigo)
+                                .frame(width: 80, height: 80)
+                                .contentTransition(.symbolEffect(.replace))
+                                .id(iconIndex)
+                                .accessibilityHidden(true)
 
-                        Text(cyclingIcons[iconIndex].1)
-                            .font(.title)
-                            .fontWeight(.bold)
-                            .contentTransition(.numericText())
+                            Text(cyclingIcons[iconIndex].1)
+                                .font(.title)
+                                .fontWeight(.bold)
+                                .contentTransition(.numericText())
 
-                        Text("Track your daily activities and habits")
-                            .font(.title3)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
-                    .padding(.top, 40)
-                    .onAppear {
-                        guard iconTimer == nil else { return }
-                        iconTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
-                            withAnimation(.easeInOut(duration: 0.6)) {
-                                iconIndex = (iconIndex + 1) % cyclingIcons.count
+                            Text("Track your daily activities and habits")
+                                .font(.title3)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding(.top, 12)
+                        .onAppear {
+                            guard iconTimer == nil else { return }
+                            iconTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { _ in
+                                withAnimation(.easeInOut(duration: 0.6)) {
+                                    iconIndex = (iconIndex + 1) % cyclingIcons.count
+                                }
                             }
                         }
+                        .onDisappear {
+                            iconTimer?.invalidate()
+                            iconTimer = nil
+                        }
+
+                        VStack(spacing: 20) {
+                            ActionButton(
+                                icon: "timer",
+                                title: "Log Activity",
+                                subtitle: "Track time spent on activities",
+                                color: .blue
+                            ) { showActivitySheet = true }
+                            .onboardingAnchor(step: 0)
+
+                            ActionButton(
+                                icon: "pill",
+                                title: "Log Substance",
+                                subtitle: "Record drug or alcohol use",
+                                color: .purple
+                            ) { showDrugSheet = true }
+                            .onboardingAnchor(step: 1)
+
+                            ActionButton(
+                                icon: "heart.text.square",
+                                title: "Log Biometric",
+                                subtitle: "Enter health data",
+                                color: .red
+                            ) { showBiometricSheet = true }
+                            .onboardingAnchor(step: 2)
+
+                            ActionButton(
+                                icon: "checklist",
+                                title: "Daily Habits",
+                                subtitle: "Track your daily checklist",
+                                color: .green
+                            ) { showDailyHabitsSheet = true }
+                            .onboardingAnchor(step: 3)
+                        }
+                        .padding(.horizontal)
+
+                        HStack(spacing: 20) {
+                            NavigationButton(
+                                icon: "list.bullet.clipboard",
+                                title: "Past Logs",
+                                action: { navigateToPastLogs = true }
+                            )
+                            NavigationButton(
+                                icon: "target",
+                                title: "Goals",
+                                action: { navigateToGoals = true }
+                            )
+                            NavigationButton(
+                                icon: "chart.bar.fill",
+                                title: "Analytics",
+                                action: { navigateToDataDisplay = true }
+                            )
+                        }
+                        .onboardingAnchor(step: 4)
+                        .padding(.horizontal)
+                        .padding(.bottom, 30)
                     }
-                    .onDisappear {
-                        iconTimer?.invalidate()
-                        iconTimer = nil
+                }
+
+                .onboardingTooltips(isActive: $showTooltips)
+                .onChange(of: showTooltips) { _, active in
+                    if !active {
+                        hasSeenTooltips = true
                     }
-
-                    Spacer()
-
-                    VStack(spacing: 20) {
-                        ActionButton(
-                            icon: "timer",
-                            title: "Log Activity",
-                            subtitle: "Track time spent on activities",
-                            color: .blue
-                        ) { showActivitySheet = true }
-
-                        ActionButton(
-                            icon: "pill",
-                            title: "Log Substance",
-                            subtitle: "Record drug or alcohol use",
-                            color: .purple
-                        ) { showDrugSheet = true }
-
-                        ActionButton(
-                            icon: "heart.text.square",
-                            title: "Log Biometric",
-                            subtitle: "Enter health data",
-                            color: .red
-                        ) { showBiometricSheet = true }
+                }
+                .onAppear {
+                    if !hasSeenTooltips {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            showTooltips = true
+                        }
                     }
-                    .padding(.horizontal)
-
-                    Spacer()
-
-                    HStack(spacing: 20) {
-                        NavigationButton(
-                            icon: "list.bullet.clipboard",
-                            title: "Past Logs",
-                            action: { navigateToPastLogs = true }
-                        )
-                        NavigationButton(
-                            icon: "target",
-                            title: "Goals",
-                            action: { navigateToGoals = true }
-                        )
-                        NavigationButton(
-                            icon: "chart.bar.fill",
-                            title: "Analytics",
-                            action: { navigateToDataDisplay = true }
-                        )
-                    }
-                    .padding(.horizontal)
-                    .padding(.bottom, 30)
                 }
 
                 // Toast overlay
@@ -135,6 +163,7 @@ struct HomeView: View {
                         .clipShape(Capsule())
                         .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
                         .transition(.move(edge: .top).combined(with: .opacity))
+                        .accessibilityLabel("Saved successfully")
                     }
                     Spacer()
                 }
@@ -142,21 +171,44 @@ struct HomeView: View {
                 .animation(.easeOut(duration: 0.3), value: sheetManager.showToast)
                 .allowsHitTesting(false)
                 
-                // Floating timer button - top right corner
-                if timerService.isRunning {
-                    TimerPillView {
-                        timerSheetActivity = timerService.currentActivity
-                        showTimerSheet = true
-                    }
-                }
             }
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if timerService.isRunning {
+                        Button {
+                            timerSheetActivity = timerService.currentActivity
+                            showTimerSheet = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "timer")
+                                    .font(.caption)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(timerService.currentActivity?.categoryName ?? "Activity")
+                                        .font(.caption2)
+                                        .fontWeight(.semibold)
+                                    Text(timerService.formatTime(timerService.elapsedTime))
+                                        .font(.caption2)
+                                        .monospacedDigit()
+                                }
+                            }
+                            .fixedSize()
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.blue.gradient)
+                            .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(timerService.currentActivity?.categoryName ?? "Activity") timer, \(timerService.formatTime(timerService.elapsedTime))")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink(destination: AccountView()) {
                         Image(systemName: "person.circle")
                             .font(.title3)
                             .foregroundColor(.primary)
                     }
+                    .accessibilityLabel("Account settings")
                 }
             }
             .navigationDestination(isPresented: $navigateToPastLogs) {
@@ -184,6 +236,9 @@ struct HomeView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showDailyHabitsSheet) {
+                DailyHabitsView()
+            }
             .onChange(of: sheetManager.activeSheetToDismiss) { _, newValue in
                 guard let which = newValue else { return }
                 switch which {
@@ -199,6 +254,7 @@ struct HomeView: View {
             }
         }
     }
+
 }
 
 struct ActionButton: View {
@@ -238,6 +294,8 @@ struct ActionButton: View {
             .shadow(color: .black.opacity(0.05), radius: 5, y: 2)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityHint(subtitle)
     }
 }
 
@@ -248,7 +306,6 @@ struct TimerPillView: View {
     var body: some View {
         VStack {
             HStack {
-                Spacer()
                 Button(action: onTap) {
                     HStack(spacing: 8) {
                         Image(systemName: "timer")
@@ -269,8 +326,10 @@ struct TimerPillView: View {
                     .clipShape(Capsule())
                     .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
                 }
-                .padding(.trailing, 16)
+                .accessibilityLabel("\(timerService.currentActivity?.categoryName ?? "Activity") timer, \(timerService.formatTime(timerService.elapsedTime))")
+                .padding(.leading, 16)
                 .padding(.top, 8)
+                Spacer()
             }
             Spacer()
         }
@@ -298,6 +357,7 @@ struct NavigationButton: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
     }
 }
 

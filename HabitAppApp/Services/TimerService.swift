@@ -6,8 +6,13 @@
 import Foundation
 import Combine
 import UserNotifications
+import UIKit
+import ActivityKit
 
 class TimerService: ObservableObject {
+    // Typealias to avoid collision with app's Activity model
+    private typealias LiveActivity = ActivityKit.Activity<TimerActivityAttributes>
+
     // Published properties that views can observe
     @Published var isRunning = false
     @Published var isPaused = false
@@ -20,6 +25,7 @@ class TimerService: ObservableObject {
     private var accumulatedTime: TimeInterval = 0
     /// Notification interval from the activity category (nil = notifications disabled)
     private(set) var notificationInterval: TimeInterval?
+    private var liveActivity: LiveActivity?
 
     // MARK: - Persistence Keys
 
@@ -40,6 +46,7 @@ class TimerService: ObservableObject {
     private init() {
         requestNotificationPermission()
         restoreState()
+        reconnectLiveActivity()
     }
 
     // MARK: - Timer Controls
@@ -55,7 +62,8 @@ class TimerService: ObservableObject {
 
         persistState()
         startTimerLoop()
-        print("Timer started for: \(activity.categoryName)")
+        updateBadge()
+        startLiveActivity()
     }
 
     func pauseTimer() {
@@ -67,7 +75,7 @@ class TimerService: ObservableObject {
         timer = nil
 
         persistState()
-        print("Timer paused at: \(formatTime(elapsedTime))")
+        updateLiveActivityPaused()
     }
 
     func resumeTimer() {
@@ -83,7 +91,7 @@ class TimerService: ObservableObject {
 
         persistState()
         startTimerLoop()
-        print("Timer resumed")
+        updateLiveActivityResumed()
     }
 
     func endTimer() -> Activity? {
@@ -106,7 +114,8 @@ class TimerService: ObservableObject {
         notificationInterval = nil
 
         clearPersistedState()
-        print("Timer ended. Duration: \(formatTime(activity.duration))")
+        updateBadge()
+        endLiveActivity()
         return activity
     }
 
@@ -123,7 +132,8 @@ class TimerService: ObservableObject {
         notificationInterval = nil
 
         clearPersistedState()
-        print("Timer cancelled")
+        updateBadge()
+        endLiveActivity()
     }
 
     // MARK: - Private Methods
@@ -206,46 +216,145 @@ class TimerService: ObservableObject {
             pausedTime = savedPausedTime > 0 ? Date(timeIntervalSince1970: savedPausedTime) : Date()
             // Recalculate elapsed up to the moment it was paused
             elapsedTime = (pausedTime ?? Date()).timeIntervalSince(Date(timeIntervalSince1970: savedStartTime)) + accumulatedTime
-            print("Timer restored (paused) - elapsed: \(formatTime(elapsedTime))")
         } else {
             isPaused = false
             elapsedTime = Date().timeIntervalSince(Date(timeIntervalSince1970: savedStartTime)) + accumulatedTime
             startTimerLoop()
-            print("Timer restored (running) - elapsed: \(formatTime(elapsedTime))")
         }
     }
     
-    // MARK: - Notifications
-    
+    // MARK: - Notifications & Badge
+
     private func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if granted {
-                print("Notification permission granted")
-            } else if let error = error {
-                print("Notification permission error: \(error.localizedDescription)")
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+    }
+
+    func scheduleBackgroundNotification() {
+        guard let activity = currentActivity else { return }
+        let center = UNUserNotificationCenter.current()
+
+        // Repeating reminder if the category has a notification interval
+        if let interval = notificationInterval {
+            let content = UNMutableNotificationContent()
+            content.title = "Timer Running"
+            content.body = "Your \(activity.categoryName) timer is still running"
+            content.sound = .default
+            content.badge = 1 as NSNumber
+
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: true)
+            center.add(UNNotificationRequest(identifier: "timer-running", content: content, trigger: trigger))
+        }
+    }
+
+    func cancelBackgroundNotification() {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: ["timer-running"])
+        center.removeDeliveredNotifications(withIdentifiers: ["timer-running"])
+    }
+
+    private func updateBadge() {
+        DispatchQueue.main.async {
+            UNUserNotificationCenter.current().setBadgeCount(self.isRunning ? 1 : 0)
+        }
+    }
+    
+    // MARK: - Live Activity
+
+    private func startLiveActivity() {
+        guard let startTime = startTime,
+              let activityName = currentActivity?.categoryName else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+
+        let attributes = TimerActivityAttributes(activityName: activityName)
+        let state = TimerActivityAttributes.ContentState(
+            timerStartDate: startTime,
+            isPaused: false,
+            elapsedAtPause: 0
+        )
+        let content = ActivityContent(state: state, staleDate: nil)
+
+        do {
+            liveActivity = try LiveActivity.request(
+                attributes: attributes,
+                content: content,
+                pushType: nil
+            )
+        } catch {
+            print("Failed to start Live Activity: \(error)")
+        }
+    }
+
+    private func updateLiveActivityPaused() {
+        guard let liveActivity else { return }
+        let state = TimerActivityAttributes.ContentState(
+            timerStartDate: startTime ?? Date(),
+            isPaused: true,
+            elapsedAtPause: elapsedTime
+        )
+        let content = ActivityContent(state: state, staleDate: nil)
+        Task {
+            await liveActivity.update(content)
+        }
+    }
+
+    private func updateLiveActivityResumed() {
+        guard let liveActivity, let startTime else { return }
+        let state = TimerActivityAttributes.ContentState(
+            timerStartDate: startTime,
+            isPaused: false,
+            elapsedAtPause: 0
+        )
+        let content = ActivityContent(state: state, staleDate: nil)
+        Task {
+            await liveActivity.update(content)
+        }
+    }
+
+    private func endLiveActivity() {
+        guard let liveActivity else { return }
+        let state = TimerActivityAttributes.ContentState(
+            timerStartDate: Date(),
+            isPaused: true,
+            elapsedAtPause: 0
+        )
+        let content = ActivityContent(state: state, staleDate: nil)
+        Task {
+            await liveActivity.end(content, dismissalPolicy: .immediate)
+        }
+        self.liveActivity = nil
+    }
+
+    /// Reconnect to an existing Live Activity after app relaunch, or clean up orphans
+    private func reconnectLiveActivity() {
+        let running = LiveActivity.activities
+        if isRunning, let startTime {
+            if let existing = running.first {
+                liveActivity = existing
+                // Update it to current state
+                let state = TimerActivityAttributes.ContentState(
+                    timerStartDate: startTime,
+                    isPaused: isPaused,
+                    elapsedAtPause: isPaused ? elapsedTime : 0
+                )
+                let content = ActivityContent(state: state, staleDate: nil)
+                Task { await existing.update(content) }
+            } else {
+                startLiveActivity()
+            }
+        } else {
+            // No timer running — end any orphaned activities
+            for activity in running {
+                let state = TimerActivityAttributes.ContentState(
+                    timerStartDate: Date(),
+                    isPaused: true,
+                    elapsedAtPause: 0
+                )
+                let content = ActivityContent(state: state, staleDate: nil)
+                Task { await activity.end(content, dismissalPolicy: .immediate) }
             }
         }
     }
-    
-    func scheduleBackgroundNotification() {
-        guard let activity = currentActivity,
-              let interval = notificationInterval else { return }
 
-        let content = UNMutableNotificationContent()
-        content.title = "Timer Running"
-        content.body = "Your \(activity.categoryName) timer is still running"
-        content.sound = .default
-
-        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: true)
-        let request = UNNotificationRequest(identifier: "timer-running", content: content, trigger: trigger)
-
-        UNUserNotificationCenter.current().add(request)
-    }
-    
-    func cancelBackgroundNotification() {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ["timer-running"])
-    }
-    
     // MARK: - Helpers
     
     func formatTime(_ timeInterval: TimeInterval) -> String {
@@ -272,7 +381,6 @@ class TimerService: ObservableObject {
         // Restart timer loop if iOS killed it
         if timer == nil {
             startTimerLoop()
-            print("Timer restarted after background - elapsed: \(formatTime(elapsedTime))")
         }
     }
 }

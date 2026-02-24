@@ -71,8 +71,7 @@ class FirebaseService: ObservableObject {
     // MARK: - Authentication
     
     func signInAnonymously() async throws {
-        let result = try await auth.signInAnonymously()
-        print("User signed in anonymously: \(result.user.uid)")
+        _ = try await auth.signInAnonymously()
     }
     
     func signOut() throws {
@@ -109,7 +108,8 @@ class FirebaseService: ObservableObject {
     
     var userId: String {
         guard let uid = currentUser?.uid, !uid.isEmpty else {
-            preconditionFailure("FirebaseService.userId accessed before authentication")
+            assertionFailure("FirebaseService.userId accessed before authentication")
+            return currentUser?.uid ?? ""
         }
         return uid
     }
@@ -454,6 +454,119 @@ class FirebaseService: ObservableObject {
             .document(goalId)
             .delete()
         invalidateCache(for: "goals")
+    }
+
+    // MARK: - Daily Habit Operations
+
+    func saveDailyHabit(_ habit: DailyHabit) async throws {
+        let ref = db.collection("users").document(userId).collection("dailyHabits")
+
+        if let id = habit.id {
+            try ref.document(id).setData(from: habit, merge: true)
+        } else {
+            _ = try ref.addDocument(from: habit)
+        }
+        invalidateCache(for: "dailyHabits")
+    }
+
+    func fetchDailyHabits() async throws -> [DailyHabit] {
+        let key = cacheKey("dailyHabits")
+        if let entry = getCachedValue(for: key), entry.isValid, let data = entry.data as? [DailyHabit] {
+            return data
+        }
+
+        let snapshot = try await db.collection("users")
+            .document(userId)
+            .collection("dailyHabits")
+            .order(by: "sortOrder")
+            .getDocuments()
+
+        let results = snapshot.documents.compactMap { try? $0.data(as: DailyHabit.self) }
+        setCachedValue(CacheEntry(data: results, timestamp: Date()), for: key)
+        return results
+    }
+
+    func deleteDailyHabit(_ habitId: String) async throws {
+        try await db.collection("users")
+            .document(userId)
+            .collection("dailyHabits")
+            .document(habitId)
+            .delete()
+        invalidateCache(for: "dailyHabits")
+
+        // Also delete all completions for this habit
+        let completions = try await db.collection("users")
+            .document(userId)
+            .collection("habitCompletions")
+            .whereField("habitId", isEqualTo: habitId)
+            .getDocuments()
+
+        let batch = db.batch()
+        for doc in completions.documents {
+            batch.deleteDocument(doc.reference)
+        }
+        try await batch.commit()
+        invalidateCache(for: "habitCompletions")
+    }
+
+    /// Toggles habit completion for a given date. Returns `true` if now completed, `false` if uncompleted.
+    func toggleHabitCompletion(habit: DailyHabit, date: String) async throws -> Bool {
+        guard let habitId = habit.id else { return false }
+
+        let ref = db.collection("users").document(userId).collection("habitCompletions")
+        let existing = try await ref
+            .whereField("habitId", isEqualTo: habitId)
+            .whereField("date", isEqualTo: date)
+            .getDocuments()
+
+        if let doc = existing.documents.first {
+            try await doc.reference.delete()
+            invalidateCache(for: "habitCompletions")
+            return false
+        } else {
+            let completion = HabitCompletion(
+                habitId: habitId,
+                userId: userId,
+                date: date,
+                completedAt: Date()
+            )
+            _ = try ref.addDocument(from: completion)
+            invalidateCache(for: "habitCompletions")
+            return true
+        }
+    }
+
+    func fetchAllHabitCompletions() async throws -> [HabitCompletion] {
+        let key = cacheKey("habitCompletions", type: "all")
+        if let entry = getCachedValue(for: key), entry.isValid, let data = entry.data as? [HabitCompletion] {
+            return data
+        }
+
+        let snapshot = try await db.collection("users")
+            .document(userId)
+            .collection("habitCompletions")
+            .getDocuments()
+
+        let results = snapshot.documents.compactMap { try? $0.data(as: HabitCompletion.self) }
+        setCachedValue(CacheEntry(data: results, timestamp: Date()), for: key)
+        return results
+    }
+
+    func fetchHabitCompletions(for date: String) async throws -> [HabitCompletion] {
+        let key = cacheKey("habitCompletions", type: date)
+        if let entry = getCachedValue(for: key), entry.isValid, let data = entry.data as? [HabitCompletion] {
+            return data
+        }
+
+        let snapshot = try await db.collection("users")
+            .document(userId)
+            .collection("habitCompletions")
+            .whereField("date", isEqualTo: date)
+            .getDocuments()
+
+        let results = snapshot.documents.compactMap { try? $0.data(as: HabitCompletion.self) }
+        setCachedValue(CacheEntry(data: results, timestamp: Date()), for: key)
+        return results
     }
 
     // MARK: - Activity Category Management

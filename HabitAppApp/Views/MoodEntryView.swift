@@ -281,7 +281,6 @@ struct MoodEntryView: View {
                     SheetManager.shared.dismissAndToast(.biometric)
                 }
             } catch {
-                print("Error saving mood: \(error)")
                 await MainActor.run {
                     errorMessage = "Failed to save mood. Please try again."
                     isSaving = false

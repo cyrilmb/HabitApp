@@ -12,7 +12,6 @@ struct EditGoalView: View {
 
     let goal: Goal
 
-    @State private var kind: GoalKind
     @State private var comparison: GoalComparison
     @State private var value: String
     @State private var unit: String
@@ -36,7 +35,6 @@ struct EditGoalView: View {
 
     init(goal: Goal) {
         self.goal = goal
-        _kind = State(initialValue: goal.kind)
         _comparison = State(initialValue: goal.comparison)
         _value = State(initialValue: goal.value == floor(goal.value) ? String(format: "%.0f", goal.value) : String(format: "%.1f", goal.value))
         _unit = State(initialValue: goal.unit)
@@ -110,22 +108,6 @@ struct EditGoalView: View {
                             Spacer()
                             Text(typeLabel)
                                 .foregroundColor(.secondary)
-                        }
-                    }
-
-                    // Kind picker
-                    if goal.categoryType == .substance || goal.categoryType == .biometric {
-                        Section {
-                            Picker("Goal Type", selection: $kind) {
-                                Text("Target").tag(GoalKind.target)
-                                Text("Limit").tag(GoalKind.limit)
-                            }
-                            .pickerStyle(.segmented)
-                            .onChange(of: kind) { _, newKind in
-                                comparison = newKind == .target ? .atLeast : .atMost
-                            }
-                        } header: {
-                            Text("Goal Type")
                         }
                     }
 
@@ -434,9 +416,7 @@ struct EditGoalView: View {
         do {
             let categories = try await FirebaseService.shared.fetchDrugCategories()
             selectedDrugCategory = categories.first(where: { $0.name == goal.categoryName })
-        } catch {
-            print("Error loading drug category: \(error)")
-        }
+        } catch { }
     }
 
     private func saveGoal() async {
@@ -471,7 +451,6 @@ struct EditGoalView: View {
         }
 
         var updated = goal
-        updated.kind = kind
         updated.comparison = comparison
         updated.value = finalValue
         updated.unit = finalUnit

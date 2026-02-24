@@ -196,7 +196,6 @@ struct EditBiometricView: View {
                     dismiss()
                 }
             } catch {
-                print("Error saving biometric: \(error)")
                 await MainActor.run {
                     errorMessage = "Failed to save. Please try again."
                     isSaving = false

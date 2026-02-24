@@ -32,6 +32,7 @@ struct PastLogsView: View {
                 }
                 .pickerStyle(.segmented)
                 .padding()
+                .accessibilityLabel("Log type filter")
 
                 // Content
                 if viewModel.isLoading && viewModel.allLogs.isEmpty {
@@ -89,7 +90,11 @@ struct PastLogsView: View {
             get: { viewModel.errorMessage != nil },
             set: { if !$0 { viewModel.errorMessage = nil } }
         )) {
-            Button("OK") { viewModel.errorMessage = nil }
+            Button("Retry") {
+                viewModel.errorMessage = nil
+                viewModel.loadLogs()
+            }
+            Button("OK", role: .cancel) { viewModel.errorMessage = nil }
         } message: {
             Text(viewModel.errorMessage ?? "")
         }

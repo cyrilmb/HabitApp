@@ -166,7 +166,6 @@ struct ActivityCompletionView: View {
                     dismiss()
                 }
             } catch {
-                print("Error saving activity: \(error)")
                 await MainActor.run {
                     errorMessage = "Failed to save activity. Please try again."
                     isSaving = false

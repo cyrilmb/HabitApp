@@ -188,9 +188,7 @@ struct ActivitySelectionView: View {
             Task {
                 do {
                     try await FirebaseService.shared.saveActivity(completedActivity)
-                    print("Auto-saved previous activity: \(completedActivity.categoryName)")
                 } catch {
-                    print("Error auto-saving: \(error)")
                     await MainActor.run {
                         viewModel.errorMessage = "Warning: previous activity could not be saved."
                     }
@@ -221,6 +219,7 @@ struct CategoryRow: View {
                 Circle()
                     .fill(Color(hex: category.colorHex ?? "#007AFF") ?? .blue)
                     .frame(width: 12, height: 12)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(category.name)
@@ -250,6 +249,7 @@ struct CategoryRow: View {
             .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(category.name)
     }
 }
 
@@ -271,7 +271,6 @@ class ActivitySelectionViewModel: ObservableObject {
                     self?.isLoading = false
                 }
             } catch {
-                print("Error loading categories: \(error)")
                 await MainActor.run { [weak self] in
                     self?.errorMessage = "Failed to load activities."
                     self?.isLoading = false
@@ -287,7 +286,6 @@ class ActivitySelectionViewModel: ObservableObject {
             do {
                 try await FirebaseService.shared.saveActivityCategory(category)
             } catch {
-                print("Error saving category: \(error)")
                 await MainActor.run { [weak self] in
                     self?.errorMessage = "Failed to save activity."
                 }

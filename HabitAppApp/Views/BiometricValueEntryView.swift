@@ -189,7 +189,6 @@ struct BiometricValueEntryView: View {
                     finalBedTime.notes = notes.isEmpty ? nil : notes
 
                     try await FirebaseService.shared.saveBiometric(finalBedTime)
-                    print("✅ Saved bed time: \(sleepTime)")
 
                     await viewModel.checkAndCreateSleepDuration()
 
@@ -205,7 +204,6 @@ struct BiometricValueEntryView: View {
                     finalWakeTime.notes = notes.isEmpty ? nil : notes
 
                     try await FirebaseService.shared.saveBiometric(finalWakeTime)
-                    print("✅ Saved wake time: \(sleepTime)")
 
                     await viewModel.checkAndCreateSleepDuration()
 
@@ -228,7 +226,6 @@ struct BiometricValueEntryView: View {
                     finalBiometric.notes = notes.isEmpty ? nil : notes
 
                     try await FirebaseService.shared.saveBiometric(finalBiometric)
-                    print("✅ Saved \(type.rawValue): \(numericValue)")
                 }
 
                 await MainActor.run {
@@ -236,7 +233,6 @@ struct BiometricValueEntryView: View {
                     SheetManager.shared.dismissAndToast(.biometric)
                 }
             } catch {
-                print("Error saving biometric: \(error)")
                 await MainActor.run {
                     errorMessage = "Failed to save. Please try again."
                     isSaving = false
@@ -273,9 +269,7 @@ class BiometricEntryViewModel: ObservableObject {
                     self.existingSleepDurations = recentBiometrics
                         .filter { $0.type == .sleepDuration }
                 }
-            } catch {
-                print("Error loading sleep logs: \(error)")
-            }
+            } catch { }
         }
     }
 
@@ -298,7 +292,6 @@ class BiometricEntryViewModel: ObservableObject {
                 .filter { $0.type == .sleepDuration }
 
         } catch {
-            print("Error reloading sleep data: \(error)")
             return
         }
 
@@ -345,9 +338,7 @@ class BiometricEntryViewModel: ObservableObject {
             await MainActor.run {
                 createdSleepDuration = true
             }
-        } catch {
-            print("Error saving sleep duration: \(error)")
-        }
+        } catch { }
     }
 
     private func findMatchingSleepPair() -> (bedTime: Date, wakeTime: Date, bedTimeBiometric: Biometric?, wakeTimeBiometric: Biometric?)? {

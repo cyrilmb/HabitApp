@@ -14,6 +14,7 @@ struct BiometricEntryView: View {
     @State private var showValueEntry = false
     @State private var enabledTypes: [BiometricType] = []
     @State private var showEditTypes = false
+    @State private var loadError = false
 
     var body: some View {
         NavigationStack {
@@ -67,6 +68,7 @@ struct BiometricEntryView: View {
                     } label: {
                         Image(systemName: "slider.horizontal.3")
                     }
+                    .accessibilityLabel("Edit biometric types")
                 }
             }
             .navigationDestination(isPresented: $showValueEntry) {
@@ -95,10 +97,12 @@ struct BiometricEntryView: View {
                 let types = try await FirebaseService.shared.fetchBiometricTypePreferences()
                 await MainActor.run {
                     enabledTypes = types
+                    loadError = false
                 }
             } catch {
                 await MainActor.run {
                     enabledTypes = Array(BiometricType.allCases)
+                    loadError = true
                 }
             }
         }
@@ -132,6 +136,7 @@ struct BiometricTypeButton: View {
             .shadow(color: .black.opacity(0.05), radius: 3, y: 1)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Log \(type.rawValue)")
     }
 }
 

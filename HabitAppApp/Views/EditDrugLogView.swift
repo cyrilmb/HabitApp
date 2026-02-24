@@ -126,7 +126,6 @@ struct EditDrugLogView: View {
                     dismiss()
                 }
             } catch {
-                print("Error saving drug log: \(error)")
                 await MainActor.run {
                     errorMessage = "Failed to save. Please try again."
                     isSaving = false

@@ -16,8 +16,10 @@ struct DataDisplayView: View {
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var selectedActivityName: String?
     @State private var selectedPieActivity: String?
+    @State private var selectedPieAngle: Double?
     @State private var selectedSubstanceName: String?
     @State private var selectedMoodQuadrant: String?
+    @State private var selectedMoodAngle: Double?
     @State private var trendFilterActivity: String = "All"
     
     var body: some View {
@@ -81,8 +83,10 @@ struct DataDisplayView: View {
                     activityAnalytics
                 } else if selectedCategory == .substances {
                     substanceAnalytics
-                } else {
+                } else if selectedCategory == .biometrics {
                     biometricAnalytics
+                } else {
+                    habitsAnalytics
                 }
             }
             .padding(.vertical)
@@ -187,6 +191,7 @@ struct DataDisplayView: View {
     
     private func goalProgressSection(for type: GoalCategoryType) -> some View {
         let items = viewModel.goalProgressItems.filter { $0.goal.categoryType == type }
+        let streaks = viewModel.goalStreakData.filter { $0.categoryType == type }
         return Group {
             if !items.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -195,7 +200,26 @@ struct DataDisplayView: View {
                         .padding(.horizontal)
 
                     ForEach(items) { item in
-                        GoalProgressCard(progress: item)
+                        let matchedStreak = streaks.first(where: { $0.goalName == item.goal.categoryName && $0.isTarget == (item.goal.kind == .target) })
+                        GoalProgressCard(progress: item, streak: matchedStreak)
+                            .padding(.horizontal)
+                    }
+                }
+            }
+        }
+    }
+
+    private var habitGoalsSection: some View {
+        let habitStreaks = viewModel.habitStreakData
+        return Group {
+            if !habitStreaks.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Goals")
+                        .font(.headline)
+                        .padding(.horizontal)
+
+                    ForEach(habitStreaks) { streak in
+                        HabitStreakCard(streak: streak)
                             .padding(.horizontal)
                     }
                 }
@@ -220,6 +244,7 @@ struct DataDisplayView: View {
                             y: .value("Hours", item.hours)
                         )
                         .foregroundStyle(Color(hex: item.colorHex) ?? .blue)
+                        .opacity(selectedActivityName == nil || selectedActivityName == item.name ? 1.0 : 0.4)
                         .cornerRadius(8)
                     }
                     .frame(height: 250)
@@ -280,7 +305,14 @@ struct DataDisplayView: View {
                         .cornerRadius(4)
                     }
                     .frame(height: 250)
-                    .chartAngleSelection(value: $selectedPieActivity)
+                    .chartAngleSelection(value: $selectedPieAngle)
+                    .onChange(of: selectedPieAngle) { _, newValue in
+                        if let angle = newValue {
+                            selectedPieActivity = findActivityItem(at: angle)
+                        } else {
+                            selectedPieActivity = nil
+                        }
+                    }
                     .chartLegend(.hidden)
                     .overlay(alignment: .topTrailing) {
                         if let name = selectedPieActivity,
@@ -442,6 +474,7 @@ struct DataDisplayView: View {
                             y: .value("Count", item.count)
                         )
                         .foregroundStyle(Color.purple.gradient)
+                        .opacity(selectedSubstanceName == nil || selectedSubstanceName == item.name ? 1.0 : 0.4)
                         .cornerRadius(8)
                     }
                     .frame(height: 250)
@@ -549,28 +582,28 @@ struct DataDisplayView: View {
     private var statisticsCards: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
             StatCard(
-                title: "Total Activities",
-                value: "\(viewModel.totalActivities)",
-                icon: "checkmark.circle.fill",
-                color: .green
+                title: "Time Change",
+                value: viewModel.activityTimeChange,
+                icon: viewModel.activityTimeChange.hasPrefix("+") ? "arrow.up.right" : viewModel.activityTimeChange.hasPrefix("-") ? "arrow.down.right" : "equal.circle",
+                color: viewModel.activityTimeChange.hasPrefix("+") ? .green : viewModel.activityTimeChange.hasPrefix("-") ? .red : .secondary
             )
-            
+
             StatCard(
-                title: "Total Time",
-                value: viewModel.totalActivityTime,
-                icon: "clock.fill",
-                color: .blue
+                title: "Sessions",
+                value: viewModel.activityCountChange,
+                icon: "number",
+                color: viewModel.activityCountChange.hasPrefix("+") ? .green : viewModel.activityCountChange.hasPrefix("-") ? .red : .secondary
             )
-            
+
             StatCard(
-                title: "Most Tracked",
-                value: viewModel.mostTrackedActivity,
-                icon: "star.fill",
+                title: "Busiest Day",
+                value: viewModel.busiestDay,
+                icon: "calendar",
                 color: .orange
             )
-            
+
             StatCard(
-                title: "Avg. Duration",
+                title: "Avg Duration",
                 value: viewModel.averageDuration,
                 icon: "timer",
                 color: .purple
@@ -582,31 +615,31 @@ struct DataDisplayView: View {
     private var substanceStatisticsCards: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
             StatCard(
-                title: "Total Logs",
-                value: "\(viewModel.totalSubstances)",
-                icon: "checkmark.circle.fill",
-                color: .green
+                title: "Usage Change",
+                value: viewModel.substanceCountChange,
+                icon: viewModel.substanceCountChange.hasPrefix("+") ? "arrow.up.right" : viewModel.substanceCountChange.hasPrefix("-") ? "arrow.down.right" : "equal.circle",
+                color: viewModel.substanceCountChange.hasPrefix("+") ? .green : viewModel.substanceCountChange.hasPrefix("-") ? .red : .secondary
             )
-            
+
             StatCard(
-                title: "Most Used",
-                value: viewModel.mostUsedSubstance,
-                icon: "star.fill",
-                color: .purple
+                title: "Trend",
+                value: viewModel.substanceTrend,
+                icon: "chart.line.uptrend.xyaxis",
+                color: .blue
             )
-            
+
             StatCard(
-                title: "Daily Average",
+                title: "Daily Avg",
                 value: viewModel.averageSubstancePerDay,
                 icon: "calendar",
                 color: .orange
             )
-            
+
             StatCard(
                 title: "Top Method",
                 value: viewModel.topMethod,
                 icon: "pill.fill",
-                color: .blue
+                color: .purple
             )
         }
         .padding(.horizontal)
@@ -906,7 +939,14 @@ struct DataDisplayView: View {
                             .cornerRadius(4)
                         }
                         .frame(height: 250)
-                        .chartAngleSelection(value: $selectedMoodQuadrant)
+                        .chartAngleSelection(value: $selectedMoodAngle)
+                        .onChange(of: selectedMoodAngle) { _, newValue in
+                            if let angle = newValue {
+                                selectedMoodQuadrant = findMoodQuadrant(at: angle)
+                            } else {
+                                selectedMoodQuadrant = nil
+                            }
+                        }
                         .chartLegend(.hidden)
                         .overlay {
                             if let quadrant = selectedMoodQuadrant,
@@ -953,34 +993,107 @@ struct DataDisplayView: View {
         }
     }
     
+    // MARK: - Habits Analytics
+
+    private var habitsAnalytics: some View {
+        VStack(spacing: 24) {
+            // Goals (includes habit streaks)
+            habitGoalsSection
+
+            // Stat Cards
+            if viewModel.totalHabits > 0 {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                    StatCard(
+                        title: "Completions",
+                        value: "\(viewModel.periodCompletions)",
+                        icon: "checkmark.circle.fill",
+                        color: .blue
+                    )
+
+                    StatCard(
+                        title: "Rate Change",
+                        value: viewModel.completionRateChange,
+                        icon: viewModel.completionRateChange.hasPrefix("+") ? "arrow.up.right" : viewModel.completionRateChange.hasPrefix("-") ? "arrow.down.right" : "equal.circle",
+                        color: viewModel.completionRateChange.hasPrefix("+") ? .green : viewModel.completionRateChange.hasPrefix("-") ? .red : .secondary
+                    )
+
+                    StatCard(
+                        title: "Completion Rate",
+                        value: viewModel.completionRate,
+                        icon: "percent",
+                        color: .orange
+                    )
+
+                    StatCard(
+                        title: "Best Streak",
+                        value: viewModel.bestOverallStreak,
+                        icon: "flame.fill",
+                        color: .red
+                    )
+                }
+                .padding(.horizontal)
+            }
+
+            // Daily Completions Bar Chart
+            if !viewModel.dailyHabitCompletionData.isEmpty {
+                ChartCard(title: "Daily Completions") {
+                    Chart(viewModel.dailyHabitCompletionData) { item in
+                        BarMark(
+                            x: .value("Date", item.date, unit: .day),
+                            y: .value("Completed", item.count)
+                        )
+                        .foregroundStyle(
+                            item.total > 0 && item.count >= item.total
+                                ? Color.green.gradient
+                                : Color.blue.gradient
+                        )
+                        .cornerRadius(4)
+                    }
+                    .frame(height: 200)
+                    .chartXAxis {
+                        AxisMarks(values: .stride(by: xAxisStride)) { _ in
+                            AxisValueLabel(format: xAxisDateFormat)
+                                .font(.caption2)
+                        }
+                    }
+                }
+            }
+
+            // Empty State
+            if viewModel.totalHabits == 0 {
+                emptyStateView(icon: "checklist", message: "No habits configured yet")
+            }
+        }
+    }
+
     private var biometricStatisticsCards: some View {
         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-            StatCard(
-                title: "Total Entries",
-                value: "\(viewModel.totalBiometrics)",
-                icon: "checkmark.circle.fill",
-                color: .green
-            )
-            
             StatCard(
                 title: "Latest Weight",
                 value: viewModel.latestWeight,
                 icon: "scalemass.fill",
                 color: .green
             )
-            
+
+            StatCard(
+                title: "Weight Change",
+                value: viewModel.weightChange,
+                icon: "chart.line.uptrend.xyaxis",
+                color: .orange
+            )
+
             StatCard(
                 title: "Avg Sleep",
                 value: viewModel.averageSleep,
                 icon: "moon.zzz.fill",
                 color: .blue
             )
-            
+
             StatCard(
-                title: "Weight Change",
-                value: viewModel.weightChange,
-                icon: "chart.line.uptrend.xyaxis",
-                color: .orange
+                title: "Sleep Change",
+                value: viewModel.sleepChange,
+                icon: viewModel.sleepChange.hasPrefix("+") ? "arrow.up.right" : viewModel.sleepChange.hasPrefix("-") ? "arrow.down.right" : "equal.circle",
+                color: viewModel.sleepChange.hasPrefix("+") ? .green : viewModel.sleepChange.hasPrefix("-") ? .red : .secondary
             )
         }
         .padding(.horizontal)
@@ -1125,17 +1238,39 @@ struct DataDisplayView: View {
             Image(systemName: icon)
                 .font(.system(size: 60))
                 .foregroundColor(.secondary)
-            
+
             Text(message)
                 .font(.headline)
                 .foregroundColor(.secondary)
-            
+
             Text("Start tracking to see analytics")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 60)
+    }
+
+    private func findActivityItem(at angle: Double) -> String? {
+        var cumulative = 0.0
+        for item in viewModel.activityTimeData {
+            cumulative += item.hours
+            if angle <= cumulative {
+                return item.name
+            }
+        }
+        return viewModel.activityTimeData.last?.name
+    }
+
+    private func findMoodQuadrant(at angle: Double) -> String? {
+        var cumulative = 0.0
+        for item in viewModel.moodQuadrantData {
+            cumulative += Double(item.count)
+            if angle <= cumulative {
+                return item.quadrant
+            }
+        }
+        return viewModel.moodQuadrantData.last?.quadrant
     }
 }
 
@@ -1145,6 +1280,96 @@ enum AnalyticsCategory: String, CaseIterable {
     case activities = "Activities"
     case substances = "Substances"
     case biometrics = "Biometrics"
+    case habits = "Habits"
+}
+
+// MARK: - Habit Streak Card
+
+struct HabitStreakCard: View {
+    let streak: HabitStreakData
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: streak.icon)
+                .font(.title3)
+                .foregroundColor(.white)
+                .frame(width: 36, height: 36)
+                .background(Color(hex: streak.colorHex) ?? .blue)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(streak.habitName)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Text("Best: \(streak.bestStreak) day\(streak.bestStreak == 1 ? "" : "s")")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            HStack(spacing: 4) {
+                Image(systemName: "flame.fill")
+                    .foregroundColor(streak.currentStreak > 0 ? .orange : .secondary)
+                Text("\(streak.currentStreak)")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(streak.currentStreak > 0 ? .primary : .secondary)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.05), radius: 3, y: 1)
+    }
+}
+
+// MARK: - Goal Streak Card
+
+struct GoalStreakCard: View {
+    let streak: GoalStreakData
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: streak.isTarget ? "target" : "hand.raised.fill")
+                .font(.title3)
+                .foregroundColor(streak.isTarget ? .green : .orange)
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(streak.goalName)
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Text(streak.isTarget ? "Target" : "Limit")
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(streak.isTarget ? Color.green : Color.orange)
+                        .clipShape(Capsule())
+                }
+                Text("Best: \(streak.bestStreak) \(streak.periodLabel)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("\(streak.currentStreak)")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                Text(streak.periodLabel)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.05), radius: 3, y: 1)
+    }
 }
 
 #Preview {

@@ -120,7 +120,6 @@ struct DrugMethodSelectionView: View {
                     }
                 }
             } catch {
-                print("Error reloading category: \(error)")
                 await MainActor.run {
                     errorMessage = "Failed to reload. Please try again."
                 }
@@ -217,7 +216,6 @@ struct AddMethodView: View {
                     dismiss()
                 }
             } catch {
-                print("Error adding method: \(error)")
                 await MainActor.run {
                     errorMessage = "Failed to add method. Please try again."
                     isSaving = false

@@ -144,7 +144,6 @@ class PastLogsViewModel: ObservableObject {
                     self.isLoading = false
                 }
             } catch {
-                print("Error loading logs: \(error)")
                 await MainActor.run { [weak self] in
                     self?.errorMessage = "Failed to load logs. Please try again."
                     self?.isLoading = false
@@ -194,7 +193,6 @@ class PastLogsViewModel: ObservableObject {
                     self.isLoading = false
                 }
             } catch {
-                print("Error loading more logs: \(error)")
                 await MainActor.run { [weak self] in
                     self?.errorMessage = "Failed to load more logs."
                     self?.isLoading = false
@@ -226,7 +224,6 @@ class PastLogsViewModel: ObservableObject {
                 self.isLoading = false
             }
         } catch {
-            print("Error refreshing logs: \(error)")
             await MainActor.run {
                 self.errorMessage = "Failed to refresh logs."
                 self.isLoading = false
@@ -298,7 +295,6 @@ class PastLogsViewModel: ObservableObject {
                     self?.recomputeFilteredLogs()
                 }
             } catch {
-                print("Error deleting activity: \(error)")
                 await MainActor.run { [weak self] in
                     self?.errorMessage = "Failed to delete activity."
                 }
@@ -315,7 +311,6 @@ class PastLogsViewModel: ObservableObject {
                     self?.recomputeFilteredLogs()
                 }
             } catch {
-                print("Error deleting drug log: \(error)")
                 await MainActor.run { [weak self] in
                     self?.errorMessage = "Failed to delete substance log."
                 }
@@ -332,7 +327,6 @@ class PastLogsViewModel: ObservableObject {
                     self?.recomputeFilteredLogs()
                 }
             } catch {
-                print("Error deleting biometric: \(error)")
                 await MainActor.run { [weak self] in
                     self?.errorMessage = "Failed to delete biometric."
                 }

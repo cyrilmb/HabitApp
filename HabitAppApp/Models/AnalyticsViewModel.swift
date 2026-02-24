@@ -19,6 +19,9 @@ class AnalyticsViewModel: ObservableObject {
     @Published var totalActivityTime = "0h"
     @Published var mostTrackedActivity = "-"
     @Published var averageDuration = "-"
+    @Published var activityTimeChange = "-"
+    @Published var activityCountChange = "-"
+    @Published var busiestDay = "-"
     
     // Substance Data
     @Published var substanceCountData: [SubstanceCountData] = []
@@ -27,6 +30,8 @@ class AnalyticsViewModel: ObservableObject {
     @Published var mostUsedSubstance = "-"
     @Published var averageSubstancePerDay = "-"
     @Published var topMethod = "-"
+    @Published var substanceCountChange = "-"
+    @Published var substanceTrend = "-"
     
     // Substance per-category filtering
     @Published var substanceCategories: [String] = []
@@ -46,9 +51,20 @@ class AnalyticsViewModel: ObservableObject {
     @Published var latestWeight = "-"
     @Published var averageSleep = "-"
     @Published var weightChange = "-"
+    @Published var sleepChange = "-"
 
     // Goal Progress
     @Published var goalProgressItems: [GoalProgress] = []
+
+    // Habit Streak Data
+    @Published var habitStreakData: [HabitStreakData] = []
+    @Published var dailyHabitCompletionData: [DailyHabitCompletionData] = []
+    @Published var goalStreakData: [GoalStreakData] = []
+    @Published var totalHabits = 0
+    @Published var periodCompletions = 0
+    @Published var completionRate = "-"
+    @Published var bestOverallStreak = "-"
+    @Published var completionRateChange = "-"
 
     // Mood Data
     @Published var moodScatterData: [MoodScatterPoint] = []
@@ -64,6 +80,15 @@ class AnalyticsViewModel: ObservableObject {
     private var drugLogs: [DrugLog] = []
     private var biometrics: [Biometric] = []
     private var categories: [ActivityCategory] = []
+    private var dailyHabits: [DailyHabit] = []
+    private var allHabitCompletions: [HabitCompletion] = []
+
+    // Previous period arrays for comparative stats
+    private var prevActivities: [Activity] = []
+    private var prevDrugLogs: [DrugLog] = []
+    private var prevBiometrics: [Biometric] = []
+    private var isAllTime = false
+    private var currentDayCount: Int?
     
     func loadData(for timeRange: TimeRange, date: Date = Date()) {
         isLoading = true
@@ -71,8 +96,16 @@ class AnalyticsViewModel: ObservableObject {
         Task { [weak self] in
             guard let self else { return }
             do {
+                let cal = Calendar.current
                 let (start, _) = self.windowBounds(for: timeRange, anchor: date)
-                let sinceDate: Date? = (timeRange == .all) ? nil : start
+
+                // Fetch 2x the window so we have a previous period for comparisons
+                let sinceDate: Date?
+                if let days = timeRange.dayCount {
+                    sinceDate = cal.date(byAdding: .day, value: -days, to: start)
+                } else {
+                    sinceDate = nil  // All Time
+                }
 
                 async let activitiesTask   = FirebaseService.shared.fetchActivities(since: sinceDate)
                 async let drugLogsTask     = FirebaseService.shared.fetchDrugLogs(since: sinceDate)
@@ -82,26 +115,45 @@ class AnalyticsViewModel: ObservableObject {
                 let (fetchedActivities, fetchedDrugLogs, fetchedBiometrics, fetchedCategories) =
                     try await (activitiesTask, drugLogsTask, biometricsTask, categoriesTask)
 
-                // Fetch goals separately so a failure doesn't break analytics
+                // Fetch goals, habits, and completions separately so a failure doesn't break analytics
                 let fetchedGoals = (try? await FirebaseService.shared.fetchGoals()) ?? []
+                let fetchedHabits = (try? await FirebaseService.shared.fetchDailyHabits()) ?? []
+                let fetchedCompletions = (try? await FirebaseService.shared.fetchAllHabitCompletions()) ?? []
 
                 await MainActor.run { [weak self] in
                     guard let self else { return }
                     let (start, end) = self.windowBounds(for: timeRange, anchor: date)
+                    self.isAllTime = (timeRange == .all)
+                    self.currentDayCount = timeRange.dayCount
                     self.categories  = fetchedCategories
                     self.activities  = fetchedActivities.filter  { $0.startTime >= start && $0.startTime < end }
                     self.drugLogs    = fetchedDrugLogs.filter    { $0.timestamp  >= start && $0.timestamp  < end }
                     self.biometrics  = fetchedBiometrics.filter  { $0.timestamp  >= start && $0.timestamp  < end }
+                    self.dailyHabits = fetchedHabits
+                    self.allHabitCompletions = fetchedCompletions
+
+                    // Previous period arrays (everything before current window start)
+                    if let days = timeRange.dayCount,
+                       let prevStart = cal.date(byAdding: .day, value: -days, to: start) {
+                        self.prevActivities = fetchedActivities.filter  { $0.startTime >= prevStart && $0.startTime < start }
+                        self.prevDrugLogs   = fetchedDrugLogs.filter    { $0.timestamp  >= prevStart && $0.timestamp  < start }
+                        self.prevBiometrics = fetchedBiometrics.filter  { $0.timestamp  >= prevStart && $0.timestamp  < start }
+                    } else {
+                        self.prevActivities = []
+                        self.prevDrugLogs   = []
+                        self.prevBiometrics = []
+                    }
 
                     self.processActivityData()
                     self.processSubstanceData()
                     self.processBiometricData()
                     self.processMoodData()
                     self.processGoalProgress(goals: fetchedGoals, allActivities: fetchedActivities, allDrugLogs: fetchedDrugLogs, allBiometrics: fetchedBiometrics, date: date)
+                    self.processHabitData(windowStart: start, windowEnd: end)
+                    self.processGoalStreaks(goals: fetchedGoals, allActivities: fetchedActivities, allDrugLogs: fetchedDrugLogs, allBiometrics: fetchedBiometrics)
                     self.isLoading = false
                 }
             } catch {
-                print("Error loading analytics data: \(error)")
                 await MainActor.run { [weak self] in
                     self?.errorMessage = "Failed to load analytics data."
                     self?.isLoading = false
@@ -134,15 +186,15 @@ class AnalyticsViewModel: ObservableObject {
         activityTimeData = []
         activityTrendData = []
         totalActivities = activities.count
-        
+
         let totalSeconds = activities.reduce(0.0) { $0 + $1.duration }
         totalActivityTime = String(format: "%.1fh", totalSeconds / 3600)
-        
+
         if !activities.isEmpty {
             let avgMin = (totalSeconds / Double(activities.count)) / 60
             averageDuration = avgMin >= 60 ? String(format: "%.1fh", avgMin / 60) : String(format: "%.0fm", avgMin)
         } else { averageDuration = "-" }
-        
+
         let grouped = Dictionary(grouping: activities, by: { $0.categoryName })
         activityTimeData = grouped.map { categoryName, categoryActivities in
             // Find the category color
@@ -156,7 +208,34 @@ class AnalyticsViewModel: ObservableObject {
         }
         .sorted { $0.hours > $1.hours }
         mostTrackedActivity = activityTimeData.first?.name ?? "-"
-        
+
+        // Comparative stats vs previous period
+        if !isAllTime && !prevActivities.isEmpty {
+            let prevSeconds = prevActivities.reduce(0.0) { $0 + $1.duration }
+            let timeDiffHours = (totalSeconds - prevSeconds) / 3600
+            activityTimeChange = String(format: "%@%.1fh", timeDiffHours >= 0 ? "+" : "", timeDiffHours)
+
+            let countDiff = activities.count - prevActivities.count
+            activityCountChange = "\(countDiff >= 0 ? "+" : "")\(countDiff)"
+        } else if !isAllTime && prevActivities.isEmpty && !activities.isEmpty {
+            activityTimeChange = String(format: "+%.1fh", totalSeconds / 3600)
+            activityCountChange = "+\(activities.count)"
+        } else {
+            activityTimeChange = "-"
+            activityCountChange = "-"
+        }
+
+        // Busiest day
+        let cal = Calendar.current
+        let byDay = Dictionary(grouping: activities) { cal.startOfDay(for: $0.startTime) }
+        if let (busiestDate, _) = byDay.max(by: { $0.value.reduce(0) { $0 + $1.duration } < $1.value.reduce(0) { $0 + $1.duration } }) {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEE"
+            busiestDay = formatter.string(from: busiestDate)
+        } else {
+            busiestDay = "-"
+        }
+
         // Per-activity daily trend data
         let byCategoryAndDay = Dictionary(grouping: activities) { activity in
             "\(activity.categoryName)||\(Calendar.current.startOfDay(for: activity.startTime).timeIntervalSince1970)"
@@ -195,10 +274,25 @@ class AnalyticsViewModel: ObservableObject {
             let days = Set(drugLogs.map { Calendar.current.startOfDay(for: $0.timestamp) })
             averageSubstancePerDay = String(format: "%.1f", Double(drugLogs.count) / Double(max(days.count, 1)))
         } else { averageSubstancePerDay = "-" }
-        
+
+        // Comparative stats vs previous period
+        if !isAllTime && !prevDrugLogs.isEmpty {
+            let countDiff = drugLogs.count - prevDrugLogs.count
+            substanceCountChange = "\(countDiff >= 0 ? "+" : "")\(countDiff)"
+            if countDiff > 0 { substanceTrend = "\u{2191} Up" }
+            else if countDiff < 0 { substanceTrend = "\u{2193} Down" }
+            else { substanceTrend = "\u{2014} Same" }
+        } else if !isAllTime && prevDrugLogs.isEmpty && !drugLogs.isEmpty {
+            substanceCountChange = "+\(drugLogs.count)"
+            substanceTrend = "\u{2191} Up"
+        } else {
+            substanceCountChange = "-"
+            substanceTrend = "-"
+        }
+
         let dailyGroups = Dictionary(grouping: drugLogs) { Calendar.current.startOfDay(for: $0.timestamp) }
         substanceTrendData = dailyGroups.map { SubstanceTrendData(date: $0.key, count: $0.value.count) }.sorted { $0.date < $1.date }
-        
+
         recomputeFilteredSubstanceData()
     }
     
@@ -250,7 +344,18 @@ class AnalyticsViewModel: ObservableObject {
         // Sleep duration
         let sleepData = biometrics.filter { $0.type == .sleepDuration }.sorted { $0.timestamp < $1.timestamp }
         sleepTrendData = sleepData.map { BiometricTrendData(date: $0.timestamp, value: $0.value) }
-        averageSleep = sleepData.isEmpty ? "-" : String(format: "%.1fh", sleepData.reduce(0.0) { $0 + $1.value } / Double(sleepData.count))
+        let currentAvgSleep = sleepData.isEmpty ? 0.0 : sleepData.reduce(0.0) { $0 + $1.value } / Double(sleepData.count)
+        averageSleep = sleepData.isEmpty ? "-" : String(format: "%.1fh", currentAvgSleep)
+
+        // Sleep change vs previous period
+        let prevSleepData = prevBiometrics.filter { $0.type == .sleepDuration }
+        if !isAllTime && !prevSleepData.isEmpty && !sleepData.isEmpty {
+            let prevAvgSleep = prevSleepData.reduce(0.0) { $0 + $1.value } / Double(prevSleepData.count)
+            let diff = currentAvgSleep - prevAvgSleep
+            sleepChange = String(format: "%@%.1fh", diff >= 0 ? "+" : "", diff)
+        } else {
+            sleepChange = "-"
+        }
         
         // Bed & Wake times — anchored to the wake day (the morning date).
         // The vertical gap between the two lines represents sleep duration.
@@ -369,6 +474,234 @@ class AnalyticsViewModel: ObservableObject {
             mostCommonQuadrant = "-"
         }
     }
+
+    // MARK: - Process Habit Data
+
+    private func processHabitData(windowStart: Date, windowEnd: Date) {
+        let habits = dailyHabits
+        let completions = allHabitCompletions
+        totalHabits = habits.count
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let todayStr = dateFormatter.string(from: Date())
+
+        // Group completions by habitId
+        let completionsByHabit = Dictionary(grouping: completions, by: { $0.habitId })
+
+        var streaks: [HabitStreakData] = []
+        var bestOverall = 0
+
+        for habit in habits {
+            guard let habitId = habit.id else { continue }
+            let habitCompletions = completionsByHabit[habitId] ?? []
+            let dateStrings = Set(habitCompletions.map { $0.date })
+
+            let currentStreak = calculateCurrentStreak(dates: dateStrings, today: todayStr, formatter: dateFormatter)
+            let bestStreak = calculateBestStreak(dates: dateStrings, formatter: dateFormatter)
+            bestOverall = max(bestOverall, bestStreak)
+
+            streaks.append(HabitStreakData(
+                habitName: habit.name,
+                colorHex: habit.colorHex,
+                icon: habit.icon,
+                currentStreak: currentStreak,
+                bestStreak: bestStreak
+            ))
+        }
+
+        habitStreakData = streaks
+        bestOverallStreak = bestOverall > 0 ? "\(bestOverall)d" : "-"
+
+        // Daily completion data for bar chart (within window)
+        let cal = Calendar.current
+        var dailyData: [DailyHabitCompletionData] = []
+        var day = windowStart
+        let windowStartStr = dateFormatter.string(from: windowStart)
+        let windowEndStr = dateFormatter.string(from: windowEnd)
+
+        // Filter completions to window
+        let windowCompletions = completions.filter { $0.date >= windowStartStr && $0.date < windowEndStr }
+        let completionsByDate = Dictionary(grouping: windowCompletions, by: { $0.date })
+
+        var totalPossible = 0
+        var totalCompleted = 0
+
+        while day < windowEnd {
+            let dayStr = dateFormatter.string(from: day)
+            let completedCount = completionsByDate[dayStr]?.count ?? 0
+            let habitCount = habits.count
+            dailyData.append(DailyHabitCompletionData(
+                date: day,
+                count: completedCount,
+                total: habitCount
+            ))
+            totalPossible += habitCount
+            totalCompleted += completedCount
+            day = cal.date(byAdding: .day, value: 1, to: day) ?? windowEnd
+        }
+
+        dailyHabitCompletionData = dailyData
+        periodCompletions = totalCompleted
+        let currentRate = totalPossible > 0 ? Double(totalCompleted) / Double(totalPossible) * 100 : 0
+        completionRate = totalPossible > 0 ? String(format: "%.0f%%", currentRate) : "-"
+
+        // Completion rate change vs previous period
+        if !isAllTime, let days = currentDayCount {
+            let cal = Calendar.current
+            let prevStart = cal.date(byAdding: .day, value: -days, to: windowStart) ?? windowStart
+            let prevEndStr = dateFormatter.string(from: windowStart)
+            let prevStartStr = dateFormatter.string(from: prevStart)
+            let prevCompletions = completions.filter { $0.date >= prevStartStr && $0.date < prevEndStr }
+
+            var prevDay = prevStart
+            var prevTotalPossible = 0
+            while prevDay < windowStart {
+                prevTotalPossible += habits.count
+                prevDay = cal.date(byAdding: .day, value: 1, to: prevDay) ?? windowStart
+            }
+            let prevRate = prevTotalPossible > 0 ? Double(prevCompletions.count) / Double(prevTotalPossible) * 100 : 0
+
+            if prevTotalPossible > 0 && totalPossible > 0 {
+                let diff = currentRate - prevRate
+                completionRateChange = String(format: "%@%.0f%%", diff >= 0 ? "+" : "", diff)
+            } else {
+                completionRateChange = "-"
+            }
+        } else {
+            completionRateChange = "-"
+        }
+    }
+
+    private func calculateCurrentStreak(dates: Set<String>, today: String, formatter: DateFormatter) -> Int {
+        let cal = Calendar.current
+        guard let todayDate = formatter.date(from: today) else { return 0 }
+
+        // Start from today or yesterday (if today isn't done yet)
+        var startDate = todayDate
+        if !dates.contains(today) {
+            guard let yesterday = cal.date(byAdding: .day, value: -1, to: todayDate) else { return 0 }
+            startDate = yesterday
+        }
+
+        var streak = 0
+        var checkDate = startDate
+        while true {
+            let checkStr = formatter.string(from: checkDate)
+            if dates.contains(checkStr) {
+                streak += 1
+                guard let prev = cal.date(byAdding: .day, value: -1, to: checkDate) else { break }
+                checkDate = prev
+            } else {
+                break
+            }
+        }
+        return streak
+    }
+
+    private func calculateBestStreak(dates: Set<String>, formatter: DateFormatter) -> Int {
+        guard !dates.isEmpty else { return 0 }
+        let cal = Calendar.current
+        let sortedDates = dates.compactMap { formatter.date(from: $0) }.sorted()
+        guard !sortedDates.isEmpty else { return 0 }
+
+        var best = 1
+        var current = 1
+        for i in 1..<sortedDates.count {
+            let daysBetween = cal.dateComponents([.day], from: sortedDates[i-1], to: sortedDates[i]).day ?? 0
+            if daysBetween == 1 {
+                current += 1
+                best = max(best, current)
+            } else if daysBetween > 1 {
+                current = 1
+            }
+            // daysBetween == 0 means duplicate date, skip
+        }
+        return best
+    }
+
+    // MARK: - Process Goal Streaks
+
+    private func processGoalStreaks(goals: [Goal], allActivities: [Activity], allDrugLogs: [DrugLog], allBiometrics: [Biometric]) {
+        let cal = Calendar.current
+        let today = Date()
+
+        var streaks: [GoalStreakData] = []
+
+        let periodicGoals = goals.filter { $0.isActive && $0.period != nil }
+
+        for goal in periodicGoals {
+            guard let period = goal.period else { continue }
+
+            var currentStreak = 0
+            var bestStreak = 0
+            var runningStreak = 0
+            var foundFirstMiss = false
+
+            // Walk backward through periods
+            // Limit goals only go back to creation date; targets use a 365-period cap
+            let maxPeriods = 365
+            for offset in 0..<maxPeriods {
+                let refDate = shiftDate(today, by: -offset, period: period, cal: cal)
+
+                // For limit goals, stop once we've gone past the goal's creation date
+                if goal.kind == .limit && refDate < cal.startOfDay(for: goal.createdAt) {
+                    break
+                }
+
+                let progress = GoalProgressCalculator.calculateProgress(
+                    goal: goal,
+                    activities: allActivities,
+                    drugLogs: allDrugLogs,
+                    biometrics: allBiometrics,
+                    referenceDate: refDate
+                )
+
+                if progress.isAchieved {
+                    runningStreak += 1
+                    if !foundFirstMiss {
+                        currentStreak = runningStreak
+                    }
+                    bestStreak = max(bestStreak, runningStreak)
+                } else {
+                    if !foundFirstMiss { foundFirstMiss = true }
+                    runningStreak = 0
+                }
+            }
+
+            let periodLabel: String
+            switch period {
+            case .daily: periodLabel = "days"
+            case .weekly: periodLabel = "weeks"
+            case .monthly: periodLabel = "months"
+            case .yearly: periodLabel = "years"
+            }
+
+            streaks.append(GoalStreakData(
+                goalName: goal.categoryName,
+                categoryType: goal.categoryType,
+                periodLabel: periodLabel,
+                currentStreak: currentStreak,
+                bestStreak: bestStreak,
+                isTarget: goal.kind == .target
+            ))
+        }
+
+        goalStreakData = streaks
+    }
+
+    private func shiftDate(_ date: Date, by offset: Int, period: GoalPeriod, cal: Calendar) -> Date {
+        switch period {
+        case .daily:
+            return cal.date(byAdding: .day, value: offset, to: date) ?? date
+        case .weekly:
+            return cal.date(byAdding: .weekOfYear, value: offset, to: date) ?? date
+        case .monthly:
+            return cal.date(byAdding: .month, value: offset, to: date) ?? date
+        case .yearly:
+            return cal.date(byAdding: .year, value: offset, to: date) ?? date
+        }
+    }
 }
 
 // MARK: - Chart Data Models
@@ -431,6 +764,32 @@ struct MoodQuadrantData: Identifiable {
     let quadrant: String
     let count: Int
     let color: String  // hex color
+}
+
+struct HabitStreakData: Identifiable {
+    let id = UUID()
+    let habitName: String
+    let colorHex: String
+    let icon: String
+    let currentStreak: Int
+    let bestStreak: Int
+}
+
+struct DailyHabitCompletionData: Identifiable {
+    let id = UUID()
+    let date: Date
+    let count: Int
+    let total: Int
+}
+
+struct GoalStreakData: Identifiable {
+    let id = UUID()
+    let goalName: String
+    let categoryType: GoalCategoryType
+    let periodLabel: String
+    let currentStreak: Int
+    let bestStreak: Int
+    let isTarget: Bool
 }
 
 enum TimeRange: String, CaseIterable {

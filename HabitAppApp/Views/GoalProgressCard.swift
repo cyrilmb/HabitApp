@@ -9,6 +9,7 @@ import SwiftUI
 
 struct GoalProgressCard: View {
     let progress: GoalProgress
+    var streak: GoalStreakData?
 
     var body: some View {
         HStack(spacing: 14) {
@@ -49,9 +50,30 @@ struct GoalProgressCard: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
 
-                Text(progress.periodLabel)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                HStack(spacing: 12) {
+                    Text(progress.periodLabel)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+
+                    if let streak = streak {
+                        HStack(spacing: 3) {
+                            Image(systemName: "flame.fill")
+                                .font(.caption2)
+                                .foregroundColor(streak.currentStreak > 0 ? .orange : .secondary)
+                            Text("\(streak.currentStreak)")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .foregroundColor(streak.currentStreak > 0 ? .primary : .secondary)
+                            Text("streak")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Text("Best: \(streak.bestStreak)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
             }
 
             Spacer()
@@ -69,7 +91,7 @@ struct GoalProgressCard: View {
     }
 
     private var progressColor: Color {
-        if progress.goal.kind == .limit || progress.goal.comparison == .atMost {
+        if progress.goal.comparison == .atMost {
             // For limits: green when under, orange when close, red when over
             if progress.progressFraction > 1.0 { return .red }
             if progress.progressFraction > 0.8 { return .orange }

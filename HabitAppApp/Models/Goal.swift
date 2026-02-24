@@ -13,7 +13,6 @@ struct Goal: Identifiable, Codable {
     var userId: String
     var categoryType: GoalCategoryType
     var categoryName: String
-    var kind: GoalKind
     var comparison: GoalComparison
     var value: Double
     var unit: String
@@ -22,11 +21,16 @@ struct Goal: Identifiable, Codable {
     var createdAt: Date
     var updatedAt: Date
 
-    init(userId: String, categoryType: GoalCategoryType, categoryName: String, kind: GoalKind, comparison: GoalComparison, value: Double, unit: String, period: GoalPeriod?, isActive: Bool = true) {
+    var kind: GoalKind { comparison == .atMost ? .limit : .target }
+
+    enum CodingKeys: String, CodingKey {
+        case id, userId, categoryType, categoryName, comparison, value, unit, period, isActive, createdAt, updatedAt
+    }
+
+    init(userId: String, categoryType: GoalCategoryType, categoryName: String, comparison: GoalComparison, value: Double, unit: String, period: GoalPeriod?, isActive: Bool = true) {
         self.userId = userId
         self.categoryType = categoryType
         self.categoryName = categoryName
-        self.kind = kind
         self.comparison = comparison
         self.value = value
         self.unit = unit

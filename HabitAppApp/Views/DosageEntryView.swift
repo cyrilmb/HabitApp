@@ -130,7 +130,6 @@ struct DosageEntryView: View {
                     SheetManager.shared.dismissAndToast(.substance)
                 }
             } catch {
-                print("Error saving drug log: \(error)")
                 await MainActor.run {
                     errorMessage = "Failed to save log. Please try again."
                     isSaving = false

@@ -153,13 +153,16 @@ struct CreateCategoryView: View {
                 userId: userId,
                 categoryType: .activity,
                 categoryName: categoryName,
-                kind: .target,
                 comparison: .atLeast,
                 value: val,
                 unit: goalUnit,
                 period: goalPeriod
             )
             Task {
+                let existing = try? await FirebaseService.shared.fetchGoals(for: .activity)
+                if existing?.contains(where: { $0.isActive && $0.categoryName == categoryName && $0.period == goalPeriod }) == true {
+                    return
+                }
                 try? await FirebaseService.shared.saveGoal(goal)
             }
         }

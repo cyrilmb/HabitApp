@@ -20,7 +20,6 @@ struct CreateGoalView: View {
     @State private var drugCategories: [DrugCategory] = []
 
     // Step 3: Goal details
-    @State private var kind: GoalKind = .target
     @State private var comparison: GoalComparison = .atLeast
     @State private var value: String = ""
     @State private var unit: String = ""
@@ -28,6 +27,7 @@ struct CreateGoalView: View {
     @State private var hasPeriod = true
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var showDuplicateAlert = false
 
     // Specialized inputs
     @State private var durationHours: Int = 0
@@ -111,6 +111,11 @@ struct CreateGoalView: View {
                 Button("OK") { errorMessage = nil }
             } message: {
                 Text(errorMessage ?? "")
+            }
+            .alert("Goal Already Exists", isPresented: $showDuplicateAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text("An active goal for \(categoryName) with this period already exists. Edit or delete the existing goal first.")
             }
         }
     }
@@ -216,24 +221,6 @@ struct CreateGoalView: View {
 
     private var step3GoalDetails: some View {
         Group {
-            // Kind picker (for substances and biometrics)
-            if categoryType == .substance || categoryType == .biometric {
-                Section {
-                    Picker("Goal Type", selection: $kind) {
-                        Text("Target").tag(GoalKind.target)
-                        Text("Limit").tag(GoalKind.limit)
-                    }
-                    .pickerStyle(.segmented)
-                    .onChange(of: kind) { _, newKind in
-                        comparison = newKind == .target ? .atLeast : .atMost
-                    }
-                } header: {
-                    Text("Goal Type")
-                } footer: {
-                    Text(kind == .target ? "Aim to reach this value" : "Aim to stay under this value")
-                }
-            }
-
             // Comparison
             Section {
                 Picker("Comparison", selection: $comparison) {
@@ -502,20 +489,17 @@ struct CreateGoalView: View {
     private func applyDefaults(for type: GoalCategoryType) {
         switch type {
         case .activity:
-            kind = .target
             comparison = .atLeast
             unit = "hours"
             hasPeriod = true
             durationHours = 1
             durationMinutes = 0
         case .substance:
-            kind = .limit
             comparison = .atMost
             unit = "times"
             hasPeriod = true
             substanceMode = .frequency
         case .biometric:
-            kind = .target
             comparison = .atLeast
             unit = ""
             hasPeriod = false
@@ -528,20 +512,17 @@ struct CreateGoalView: View {
         case .bedTime:
             selectedTime = GoalFormatters.dateFromFractionalHours(22.0) // 10:00 PM
             comparison = .atMost
-            kind = .target
             hasPeriod = true
             period = .daily
         case .wakeTime:
             selectedTime = GoalFormatters.dateFromFractionalHours(7.0) // 7:00 AM
             comparison = .atMost
-            kind = .target
             hasPeriod = true
             period = .daily
         case .sleepDuration:
             sleepHours = 8
             sleepMinutes = 0
             comparison = .atLeast
-            kind = .target
             hasPeriod = true
             period = .daily
         case .weight:
@@ -551,7 +532,6 @@ struct CreateGoalView: View {
             moodAxis = "pleasantness"
             moodValue = 0.5
             comparison = .atLeast
-            kind = .target
             hasPeriod = true
             period = .daily
         default:
@@ -587,9 +567,7 @@ struct CreateGoalView: View {
         do {
             activityCategories = try await FirebaseService.shared.fetchActivityCategories()
             drugCategories = try await FirebaseService.shared.fetchDrugCategories()
-        } catch {
-            print("Error loading categories: \(error)")
-        }
+        } catch { }
     }
 
     private func saveGoal() async {
@@ -623,15 +601,25 @@ struct CreateGoalView: View {
             finalUnit = unit
         }
 
+        let finalPeriod: GoalPeriod? = (categoryType == .biometric && !hasPeriod) ? nil : period
+
+        // Duplicate check
+        do {
+            let existingGoals = try await FirebaseService.shared.fetchGoals(for: categoryType)
+            if existingGoals.contains(where: { $0.isActive && $0.categoryName == categoryName && $0.period == finalPeriod }) {
+                showDuplicateAlert = true
+                return
+            }
+        } catch { }
+
         let goal = Goal(
             userId: FirebaseService.shared.userId,
             categoryType: categoryType,
             categoryName: categoryName,
-            kind: kind,
             comparison: comparison,
             value: finalValue,
             unit: finalUnit,
-            period: (categoryType == .biometric && !hasPeriod) ? nil : period
+            period: finalPeriod
         )
         isSaving = true
         do {

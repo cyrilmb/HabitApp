@@ -10,12 +10,16 @@ import AuthenticationServices
 
 struct AccountView: View {
     @ObservedObject private var firebaseService = FirebaseService.shared
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = true
+    @AppStorage("hasSeenTooltips") private var hasSeenTooltips = true
     @State private var isLinking = false
     @State private var isSigningOut = false
     @State private var isDeletingAccount = false
     @State private var showDeleteAlert = false
     @State private var errorMessage: String?
     @State private var showPrivacyPolicy = false
+    @State private var isExporting = false
+    @State private var exportFileURL: URL?
 
     private let appleSignInHelper = AppleSignInHelper()
 
@@ -27,6 +31,7 @@ struct AccountView: View {
                         .font(.title2)
                         .foregroundColor(firebaseService.isAnonymous ? .orange : .primary)
                         .frame(width: 40)
+                        .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(firebaseService.isAnonymous ? "Anonymous Account" : "Apple ID")
@@ -64,10 +69,50 @@ struct AccountView: View {
 
             if let errorMessage {
                 Section {
-                    Text(errorMessage)
-                        .foregroundColor(.red)
+                    HStack {
+                        Text(errorMessage)
+                            .foregroundColor(.red)
+                            .font(.caption)
+                        Spacer()
+                        Button("Retry") {
+                            self.errorMessage = nil
+                            linkAppleAccount()
+                        }
                         .font(.caption)
+                    }
                 }
+            }
+
+            Section {
+                Button(action: exportData) {
+                    HStack {
+                        if isExporting {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                            Text("Export Data")
+                        }
+                    }
+                }
+                .disabled(isExporting)
+            } header: {
+                Text("Data")
+            } footer: {
+                Text("Export all your data as a JSON file.")
+            }
+
+            Section {
+                Button(action: {
+                    hasSeenOnboarding = false
+                    hasSeenTooltips = false
+                }) {
+                    HStack {
+                        Image(systemName: "book.fill")
+                        Text("Show Walkthrough")
+                    }
+                }
+            } footer: {
+                Text("Replay the intro pages and feature tour.")
             }
 
             Section {
@@ -121,6 +166,14 @@ struct AccountView: View {
                 PrivacyPolicyView()
             }
         }
+        .sheet(isPresented: Binding(
+            get: { exportFileURL != nil },
+            set: { if !$0 { exportFileURL = nil } }
+        )) {
+            if let url = exportFileURL {
+                ActivityShareSheet(items: [url])
+            }
+        }
         .alert("Delete Account?", isPresented: $showDeleteAlert) {
             Button("Cancel", role: .cancel) { }
             Button("Delete", role: .destructive) {
@@ -128,6 +181,26 @@ struct AccountView: View {
             }
         } message: {
             Text("This will permanently delete your account. This cannot be undone.")
+        }
+    }
+
+    private func exportData() {
+        isExporting = true
+        errorMessage = nil
+
+        Task {
+            do {
+                let url = try await DataExportService.exportAllData()
+                await MainActor.run {
+                    exportFileURL = url
+                    isExporting = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to export data. Please try again."
+                    isExporting = false
+                }
+            }
         }
     }
 
@@ -179,6 +252,16 @@ struct AccountView: View {
             }
         }
     }
+}
+
+struct ActivityShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
 
 #Preview {

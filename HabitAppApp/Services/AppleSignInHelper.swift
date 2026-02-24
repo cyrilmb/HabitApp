@@ -14,12 +14,12 @@ class AppleSignInHelper: NSObject {
     private var currentNonce: String?
 
     func signIn() async throws -> (idToken: String, nonce: String) {
-        try await withCheckedThrowingContinuation { continuation in
-            self.continuation = continuation
+        let nonce = try Self.randomNonceString()
+        currentNonce = nonce
+        let hashedNonce = Self.sha256(nonce)
 
-            let nonce = Self.randomNonceString()
-            currentNonce = nonce
-            let hashedNonce = Self.sha256(nonce)
+        return try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
 
             let request = ASAuthorizationAppleIDProvider().createRequest()
             request.requestedScopes = [.email]
@@ -31,12 +31,12 @@ class AppleSignInHelper: NSObject {
         }
     }
 
-    private static func randomNonceString(length: Int = 32) -> String {
+    private static func randomNonceString(length: Int = 32) throws -> String {
         precondition(length > 0)
         var bytes = [UInt8](repeating: 0, count: length)
         let result = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
         guard result == errSecSuccess else {
-            fatalError("Unable to generate random nonce")
+            throw AppleSignInError.nonceGenerationFailed
         }
         let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvxyz-._")
         return String(bytes.map { charset[Int($0) % charset.count] })
@@ -72,11 +72,14 @@ extension AppleSignInHelper: ASAuthorizationControllerDelegate {
 
 enum AppleSignInError: LocalizedError {
     case invalidCredential
+    case nonceGenerationFailed
 
     var errorDescription: String? {
         switch self {
         case .invalidCredential:
             return "Unable to retrieve Apple ID credentials."
+        case .nonceGenerationFailed:
+            return "Unable to generate secure nonce for authentication."
         }
     }
 }

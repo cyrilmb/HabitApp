@@ -261,7 +261,6 @@ struct EditCategoryView: View {
                     dismiss()
                 }
             } catch {
-                print("Error saving category: \(error)")
                 await MainActor.run {
                     errorMessage = "Failed to save. Please try again."
                     isSaving = false
@@ -291,7 +290,6 @@ struct EditCategoryView: View {
                     dismiss()
                 }
             } catch {
-                print("Error deleting category: \(error)")
                 await MainActor.run {
                     errorMessage = "Failed to delete. Please try again."
                     isDeleting = false

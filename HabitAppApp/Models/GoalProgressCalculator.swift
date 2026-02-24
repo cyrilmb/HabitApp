@@ -130,7 +130,8 @@ enum GoalProgressCalculator {
 
             if goal.period == nil {
                 let sorted = matching.sorted { $0.timestamp > $1.timestamp }
-                return extractValue(sorted.first!)
+                guard let first = sorted.first else { return 0 }
+                return extractValue(first)
             } else {
                 let sum = matching.reduce(0.0) { $0 + extractValue($1) }
                 return sum / Double(matching.count)
@@ -177,24 +178,26 @@ enum GoalProgressCalculator {
             return (Date(timeIntervalSince1970: 0), Date(timeIntervalSince1970: 99999999999))
         }
 
+        let fallback = (cal.startOfDay(for: referenceDate), cal.startOfDay(for: referenceDate))
+
         switch period {
         case .daily:
             let start = cal.startOfDay(for: referenceDate)
-            let end = cal.date(byAdding: .day, value: 1, to: start)!
+            guard let end = cal.date(byAdding: .day, value: 1, to: start) else { return fallback }
             return (start, end)
         case .weekly:
-            let start = cal.dateComponents([.calendar, .yearForWeekOfYear, .weekOfYear], from: referenceDate).date!
-            let end = cal.date(byAdding: .weekOfYear, value: 1, to: start)!
+            guard let start = cal.dateComponents([.calendar, .yearForWeekOfYear, .weekOfYear], from: referenceDate).date,
+                  let end = cal.date(byAdding: .weekOfYear, value: 1, to: start) else { return fallback }
             return (start, end)
         case .monthly:
             let comps = cal.dateComponents([.year, .month], from: referenceDate)
-            let start = cal.date(from: comps)!
-            let end = cal.date(byAdding: .month, value: 1, to: start)!
+            guard let start = cal.date(from: comps),
+                  let end = cal.date(byAdding: .month, value: 1, to: start) else { return fallback }
             return (start, end)
         case .yearly:
             let comps = cal.dateComponents([.year], from: referenceDate)
-            let start = cal.date(from: comps)!
-            let end = cal.date(byAdding: .year, value: 1, to: start)!
+            guard let start = cal.date(from: comps),
+                  let end = cal.date(byAdding: .year, value: 1, to: start) else { return fallback }
             return (start, end)
         }
     }

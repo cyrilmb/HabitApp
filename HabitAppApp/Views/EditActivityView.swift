@@ -124,7 +124,6 @@ struct EditActivityView: View {
                     dismiss()
                 }
             } catch {
-                print("Error saving activity: \(error)")
                 await MainActor.run {
                     errorMessage = "Failed to save. Please try again."
                     isSaving = false

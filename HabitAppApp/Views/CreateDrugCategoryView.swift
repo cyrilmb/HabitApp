@@ -15,7 +15,7 @@ struct CreateDrugCategoryView: View {
 
     // Goal
     @State private var goalEnabled = false
-    @State private var goalKind: GoalKind = .limit
+    @State private var goalIsLimit = true
     @State private var goalValue: String = ""
     @State private var goalUnit: String = "times"
     @State private var goalPeriod: GoalPeriod = .daily
@@ -87,9 +87,9 @@ struct CreateDrugCategoryView: View {
                     Toggle("Set a Goal", isOn: $goalEnabled)
 
                     if goalEnabled {
-                        Picker("Goal Type", selection: $goalKind) {
-                            Text("Target").tag(GoalKind.target)
-                            Text("Limit").tag(GoalKind.limit)
+                        Picker("Goal Type", selection: $goalIsLimit) {
+                            Text("Target").tag(false)
+                            Text("Limit").tag(true)
                         }
                         .pickerStyle(.segmented)
 
@@ -109,7 +109,7 @@ struct CreateDrugCategoryView: View {
                     Text("Goal")
                 } footer: {
                     if goalEnabled {
-                        Text(goalKind == .limit ? "Set a usage limit" : "Set a usage target")
+                        Text(goalIsLimit ? "Set a usage limit" : "Set a usage target")
                     }
                 }
 
@@ -182,13 +182,16 @@ struct CreateDrugCategoryView: View {
                 userId: userId,
                 categoryType: .substance,
                 categoryName: categoryName,
-                kind: goalKind,
-                comparison: goalKind == .limit ? .atMost : .atLeast,
+                comparison: goalIsLimit ? .atMost : .atLeast,
                 value: val,
                 unit: goalUnit,
                 period: goalPeriod
             )
             Task {
+                let existing = try? await FirebaseService.shared.fetchGoals(for: .substance)
+                if existing?.contains(where: { $0.isActive && $0.categoryName == categoryName && $0.period == goalPeriod }) == true {
+                    return
+                }
                 try? await FirebaseService.shared.saveGoal(goal)
             }
         }

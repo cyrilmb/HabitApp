@@ -13,15 +13,44 @@
 		406A78032F3BF91700C1298B /* FirebaseAppCheck in Frameworks */ = {isa = PBXBuildFile; productRef = 406A78022F3BF91700C1298B /* FirebaseAppCheck */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		C0LA00012F4B000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 401A62252F2D02CB00324F42 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C0LA00102F4B000000000010;
+			remoteInfo = TimerWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		C0LA00032F4B000000000003 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		401A622D2F2D02CB00324F42 /* HabitApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HabitApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4039FB162F3BFA2700297033 /* HabitApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HabitApp.entitlements; sourceTree = "<group>"; };
+		C0LA00042F4B000000000004 /* TimerWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = TimerWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		401A622F2F2D02CB00324F42 /* HabitAppApp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = HabitAppApp;
+			sourceTree = "<group>";
+		};
+		C0LA00052F4B000000000005 /* TimerWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = TimerWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -38,6 +67,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0LA00062F4B000000000006 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -46,6 +82,7 @@
 			children = (
 				4039FB162F3BFA2700297033 /* HabitApp.entitlements */,
 				401A622F2F2D02CB00324F42 /* HabitAppApp */,
+				C0LA00052F4B000000000005 /* TimerWidget */,
 				406A78012F3BF91700C1298B /* Frameworks */,
 				401A622E2F2D02CB00324F42 /* Products */,
 			);
@@ -55,6 +92,7 @@
 			isa = PBXGroup;
 			children = (
 				401A622D2F2D02CB00324F42 /* HabitApp.app */,
+				C0LA00042F4B000000000004 /* TimerWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -76,10 +114,12 @@
 				401A62292F2D02CB00324F42 /* Sources */,
 				401A622A2F2D02CB00324F42 /* Frameworks */,
 				401A622B2F2D02CB00324F42 /* Resources */,
+				C0LA00032F4B000000000003 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C0LA00022F4B000000000002 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				401A622F2F2D02CB00324F42 /* HabitAppApp */,
@@ -95,6 +135,26 @@
 			productReference = 401A622D2F2D02CB00324F42 /* HabitApp.app */;
 			productType = "com.apple.product-type.application";
 		};
+		C0LA00102F4B000000000010 /* TimerWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0LA000D2F4B00000000000D /* Build configuration list for PBXNativeTarget "TimerWidgetExtension" */;
+			buildPhases = (
+				C0LA00072F4B000000000007 /* Sources */,
+				C0LA00062F4B000000000006 /* Frameworks */,
+				C0LA00082F4B000000000008 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C0LA00052F4B000000000005 /* TimerWidget */,
+			);
+			name = TimerWidgetExtension;
+			productName = TimerWidgetExtension;
+			productReference = C0LA00042F4B000000000004 /* TimerWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -106,6 +166,9 @@
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					401A622C2F2D02CB00324F42 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					C0LA00102F4B000000000010 = {
 						CreatedOnToolsVersion = 26.2;
 					};
 				};
@@ -128,12 +191,20 @@
 			projectRoot = "";
 			targets = (
 				401A622C2F2D02CB00324F42 /* HabitApp */,
+				C0LA00102F4B000000000010 /* TimerWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		401A622B2F2D02CB00324F42 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0LA00082F4B000000000008 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -150,7 +221,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0LA00072F4B000000000007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C0LA00022F4B000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C0LA00102F4B000000000010 /* TimerWidgetExtension */;
+			targetProxy = C0LA00012F4B000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		401A62362F2D02CC00324F42 /* Debug */ = {
@@ -281,6 +367,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -326,6 +413,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -357,6 +445,56 @@
 			};
 			name = Release;
 		};
+		C0LA000B2F4B00000000000B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = GBW95BPA7C;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = TimerWidgetExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cyril.HabitApp.TimerWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C0LA000C2F4B00000000000C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = GBW95BPA7C;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = TimerWidgetExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cyril.HabitApp.TimerWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -374,6 +512,15 @@
 			buildConfigurations = (
 				401A62392F2D02CC00324F42 /* Debug */,
 				401A623A2F2D02CC00324F42 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C0LA000D2F4B00000000000D /* Build configuration list for PBXNativeTarget "TimerWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0LA000B2F4B00000000000B /* Debug */,
+				C0LA000C2F4B00000000000C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

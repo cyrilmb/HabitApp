@@ -12,6 +12,7 @@ struct GoalsView: View {
     @State private var isLoading = true
     @State private var showCreateGoal = false
     @State private var goalToEdit: Goal?
+    @State private var errorMessage: String?
 
     var body: some View {
         Group {
@@ -30,6 +31,7 @@ struct GoalsView: View {
                 Button(action: { showCreateGoal = true }) {
                     Image(systemName: "plus")
                 }
+                .accessibilityLabel("Add new goal")
             }
         }
         .sheet(isPresented: $showCreateGoal, onDismiss: { Task { await loadGoals() } }) {
@@ -39,6 +41,18 @@ struct GoalsView: View {
             EditGoalView(goal: goal)
         }
         .task { await loadGoals() }
+        .alert("Error", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("Retry") {
+                errorMessage = nil
+                Task { await loadGoals() }
+            }
+            Button("OK", role: .cancel) { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "")
+        }
     }
 
     // MARK: - Subviews
@@ -104,8 +118,8 @@ struct GoalsView: View {
             goals = try await FirebaseService.shared.fetchGoals()
             isLoading = false
         } catch {
-            print("Error loading goals: \(error)")
             isLoading = false
+            errorMessage = "Failed to load goals. Please try again."
         }
     }
 
@@ -115,9 +129,7 @@ struct GoalsView: View {
             guard let id = goal.id else { continue }
             do {
                 try await FirebaseService.shared.deleteGoal(id)
-            } catch {
-                print("Error deleting goal: \(error)")
-            }
+            } catch { }
         }
         await loadGoals()
     }
@@ -169,6 +181,7 @@ struct GoalRow: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityLabel("\(goal.categoryName), \(goalDescription)")
     }
 
     private var iconForType: String {

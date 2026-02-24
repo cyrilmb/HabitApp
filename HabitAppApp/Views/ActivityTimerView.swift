@@ -187,24 +187,16 @@ struct ActivityTimerView: View {
                 ActivityCompletionView(
                     activity: activity,
                     onSaved: {
-                        print("🟢 onSaved callback fired - setting activityWasSaved = true")
                         activityWasSaved = true
                     },
                     onDiscarded: {
-                        print("🟠 onDiscarded callback fired - setting activityWasDiscarded = true")
                         activityWasDiscarded = true
                     }
                 )
                 .interactiveDismissDisabled(true)  // Prevent accidental swipe-down
-                .onAppear {
-                    print("🟡 ActivityCompletionView appeared")
-                }
                 .onDisappear {
-                    print("🔴 ActivityCompletionView disappeared - saved: \(activityWasSaved), discarded: \(activityWasDiscarded)")
-                    
                     // Close timer and show appropriate UI
                     if activityWasSaved {
-                        print("✅ Completion closed after save - dismissing timer and showing toast")
                         dismiss()  // Close timer sheet
                         Task { @MainActor in
                             try? await Task.sleep(nanoseconds: 500_000_000)
@@ -212,7 +204,6 @@ struct ActivityTimerView: View {
                         }
                         activityWasSaved = false
                     } else if activityWasDiscarded {
-                        print("🗑️ Completion closed after discard - dismissing timer, no toast")
                         dismiss()  // Close timer sheet
                         activityWasDiscarded = false
                     }
@@ -237,13 +228,8 @@ struct ActivityTimerView: View {
     }
     
     private func endTimer() {
-        print("🔵 endTimer called")
         if let completed = timerService.endTimer() {
-            print("🔵 Got completed activity: \(completed.categoryName), id: \(completed.id ?? "nil")")
             completedActivity = completed
-            print("🔵 Set completedActivity - should trigger sheet")
-        } else {
-            print("🔵 ❌ timerService.endTimer() returned nil!")
         }
     }
     
