@@ -252,9 +252,18 @@ struct EditCategoryView: View {
         updatedCategory.colorHex = selectedColor
         updatedCategory.notificationInterval = actualInterval
 
+        let nameChanged = category.name != categoryName
+
         Task {
             do {
                 try await FirebaseService.shared.saveActivityCategory(updatedCategory)
+                if nameChanged {
+                    try await FirebaseService.shared.renameCategoryInRecords(
+                        oldName: category.name,
+                        newName: categoryName,
+                        collections: ["activities", "goals"]
+                    )
+                }
                 await MainActor.run {
                     isSaving = false
                     onSave()

@@ -141,9 +141,18 @@ struct EditMethodsView: View {
         updatedCategory.defaultDosageUnit = dosageUnit.isEmpty ? nil : dosageUnit
         updatedCategory.methods = methods.filter { !$0.isEmpty }
 
+        let nameChanged = category.name != categoryName
+
         Task {
             do {
                 try await FirebaseService.shared.saveDrugCategory(updatedCategory)
+                if nameChanged {
+                    try await FirebaseService.shared.renameCategoryInRecords(
+                        oldName: category.name,
+                        newName: categoryName,
+                        collections: ["drugLogs", "goals"]
+                    )
+                }
                 await MainActor.run {
                     dismiss()
                 }

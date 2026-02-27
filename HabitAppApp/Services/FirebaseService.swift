@@ -571,6 +571,27 @@ class FirebaseService: ObservableObject {
 
     // MARK: - Activity Category Management
 
+    func renameCategoryInRecords(oldName: String, newName: String, collections: [String]) async throws {
+        for collection in collections {
+            let snapshot = try await db.collection("users")
+                .document(userId)
+                .collection(collection)
+                .whereField("categoryName", isEqualTo: oldName)
+                .getDocuments()
+
+            let batchSize = 500
+            for chunk in stride(from: 0, to: snapshot.documents.count, by: batchSize) {
+                let batch = db.batch()
+                let end = min(chunk + batchSize, snapshot.documents.count)
+                for i in chunk..<end {
+                    batch.updateData(["categoryName": newName], forDocument: snapshot.documents[i].reference)
+                }
+                try await batch.commit()
+            }
+            invalidateCache(for: collection)
+        }
+    }
+
     func deleteActivitiesByCategory(_ categoryName: String) async throws {
         let snapshot = try await db.collection("users")
             .document(userId)
