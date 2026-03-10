@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pause — Mindful Habit Tracking</title>
+  <meta name="description" content="Pause is a mindful habit tracking app that helps you build awareness around your daily patterns, health, and goals.">
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --color-bg: #FAFAF9;
+      --color-surface: #FFFFFF;
+      --color-text: #1C1C1E;
+      --color-text-secondary: #6B7280;
+      --color-accent: #7C9A92;
+      --color-accent-light: #E8F0ED;
+      --color-border: #E5E7EB;
+      --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --max-width: 1080px;
+      --section-padding: 6rem 1.5rem;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font-stack);
+      background: var(--color-bg);
+      color: var(--color-text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--color-accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    img { max-width: 100%; display: block; }
+
+    /* ── Nav ── */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(250, 250, 249, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .nav-inner {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      padding: 0.85rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .nav-logo {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--color-text);
+    }
+
+    .nav-links { display: flex; gap: 1.75rem; list-style: none; }
+
+    .nav-links a {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--color-text-secondary);
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: var(--color-text); text-decoration: none; }
+
+    .nav-toggle {
+      display: none;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 0.25rem;
+    }
+
+    .nav-toggle span {
+      display: block;
+      width: 22px;
+      height: 2px;
+      background: var(--color-text);
+      margin: 5px 0;
+      transition: 0.3s;
+    }
+
+    /* ── Section Helpers ── */
+    .section { padding: var(--section-padding); }
+
+    .section-inner {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    .section-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--color-accent);
+      margin-bottom: 0.75rem;
+    }
+
+    .section-title {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      margin-bottom: 1rem;
+    }
+
+    .section-subtitle {
+      font-size: 1.1rem;
+      color: var(--color-text-secondary);
+      max-width: 600px;
+      line-height: 1.6;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 8rem 1.5rem 6rem;
+    }
+
+    .hero-content { max-width: 640px; }
+
+    .hero h1 {
+      font-size: clamp(3rem, 8vw, 5rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      margin-bottom: 1.25rem;
+    }
+
+    .hero .tagline {
+      font-size: 1.35rem;
+      color: var(--color-text-secondary);
+      margin-bottom: 2.5rem;
+      line-height: 1.5;
+    }
+
+    .hero-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--color-text);
+      color: var(--color-bg);
+      padding: 0.85rem 2rem;
+      border-radius: 100px;
+      font-size: 1rem;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+
+    .hero-cta:hover { opacity: 0.8; text-decoration: none; }
+
+    .hero-cta svg { width: 18px; height: 18px; }
+
+    /* ── Features ── */
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2rem;
+      margin-top: 3rem;
+    }
+
+    .feature-card {
+      background: var(--color-surface);
+      border: 1px solid var(--color-border);
+      border-radius: 16px;
+      padding: 2rem;
+      transition: box-shadow 0.2s;
+    }
+
+    .feature-card:hover {
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.05);
+    }
+
+    .feature-icon {
+      width: 44px;
+      height: 44px;
+      background: var(--color-accent-light);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .feature-card h3 {
+      font-size: 1.1rem;
+      font-weight: 650;
+      margin-bottom: 0.5rem;
+    }
+
+    .feature-card p {
+      font-size: 0.925rem;
+      color: var(--color-text-secondary);
+      line-height: 1.55;
+    }
+
+    /* ── Screenshots ── */
+    .screenshots-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      margin-top: 3rem;
+    }
+
+    .screenshot-slot {
+      aspect-ratio: 9 / 19.5;
+      background: var(--color-surface);
+      border: 2px dashed var(--color-border);
+      border-radius: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--color-text-secondary);
+      font-size: 0.85rem;
+      text-align: center;
+      padding: 1.5rem;
+    }
+
+    .screenshot-slot svg {
+      width: 32px;
+      height: 32px;
+      stroke: var(--color-border);
+      margin-bottom: 0.75rem;
+    }
+
+    .screenshot-slot img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 22px;
+    }
+
+    .screenshot-slot.has-image {
+      border: none;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    /* ── About ── */
+    .about-section {
+      background: var(--color-surface);
+      border-top: 1px solid var(--color-border);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .about-content {
+      max-width: 680px;
+    }
+
+    .about-content p {
+      font-size: 1.05rem;
+      color: var(--color-text-secondary);
+      line-height: 1.75;
+      margin-bottom: 1.25rem;
+    }
+
+    .about-content p:last-child { margin-bottom: 0; }
+
+    /* ── Contact ── */
+    .contact-form {
+      max-width: 520px;
+      margin-top: 2.5rem;
+    }
+
+    .form-group { margin-bottom: 1.25rem; }
+
+    .form-group label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+
+    .form-group input,
+    .form-group textarea {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      font-family: var(--font-stack);
+      font-size: 0.95rem;
+      border: 1px solid var(--color-border);
+      border-radius: 10px;
+      background: var(--color-surface);
+      color: var(--color-text);
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: var(--color-accent);
+    }
+
+    .form-group textarea { resize: vertical; min-height: 120px; }
+
+    .form-note {
+      font-size: 0.8rem;
+      color: var(--color-text-secondary);
+      margin-bottom: 1.5rem;
+      font-style: italic;
+    }
+
+    .btn-submit {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--color-accent);
+      color: #fff;
+      padding: 0.75rem 1.75rem;
+      border: none;
+      border-radius: 100px;
+      font-family: var(--font-stack);
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .btn-submit:hover { opacity: 0.85; }
+
+    /* ── Privacy ── */
+    .privacy-section {
+      background: var(--color-surface);
+      border-top: 1px solid var(--color-border);
+    }
+
+    .privacy-content {
+      max-width: 680px;
+    }
+
+    .privacy-content h3 {
+      font-size: 1.1rem;
+      font-weight: 650;
+      margin: 1.75rem 0 0.5rem;
+    }
+
+    .privacy-content h3:first-child { margin-top: 1rem; }
+
+    .privacy-content p {
+      font-size: 0.95rem;
+      color: var(--color-text-secondary);
+      line-height: 1.65;
+      margin-bottom: 0.75rem;
+    }
+
+    .privacy-content ul {
+      color: var(--color-text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.65;
+      padding-left: 1.25rem;
+      margin-bottom: 0.75rem;
+    }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--color-border);
+      padding: 2.5rem 1.5rem;
+    }
+
+    .footer-inner {
+      max-width: var(--max-width);
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+      color: var(--color-text-secondary);
+    }
+
+    .footer-links { display: flex; gap: 1.5rem; list-style: none; }
+
+    .footer-links a {
+      color: var(--color-text-secondary);
+      font-size: 0.85rem;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover { color: var(--color-text); }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      :root { --section-padding: 4rem 1.25rem; }
+
+      .nav-links { display: none; }
+      .nav-links.open {
+        display: flex;
+        flex-direction: column;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: rgba(250, 250, 249, 0.95);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-bottom: 1px solid var(--color-border);
+        padding: 1rem 1.5rem;
+        gap: 1rem;
+      }
+      .nav-toggle { display: block; }
+
+      .hero { min-height: auto; padding: 7rem 1.25rem 4rem; }
+      .hero h1 { font-size: 2.75rem; }
+
+      .features-grid { grid-template-columns: 1fr; gap: 1rem; }
+
+      .screenshots-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.75rem;
+      }
+
+      .section-title { font-size: 1.65rem; }
+
+      .footer-inner { flex-direction: column; gap: 1rem; text-align: center; }
+    }
+
+    @media (max-width: 480px) {
+      .screenshots-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 0.75rem;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Nav -->
+  <nav>
+    <div class="nav-inner">
+      <a href="#" class="nav-logo">Pause</a>
+      <button class="nav-toggle" aria-label="Toggle menu">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#screenshots">Screenshots</a></li>
+        <li><a href="#about">About</a></li>
+        <li><a href="#contact">Contact</a></li>
+        <li><a href="#privacy">Privacy</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero" id="hero">
+    <div class="hero-content">
+      <h1>Pause</h1>
+      <p class="tagline">A mindful approach to understanding your daily patterns. Track habits, log health data, and build self-awareness&mdash;without the noise.</p>
+      <a href="#features" class="hero-cta">
+        Learn More
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>
+      </a>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="section" id="features">
+    <div class="section-inner">
+      <p class="section-label">Features</p>
+      <h2 class="section-title">Everything you need,<br>nothing you don't</h2>
+      <p class="section-subtitle">Pause gives you a clear, honest picture of your daily life&mdash;designed to help you notice patterns, not optimize everything.</p>
+
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">&#128203;</div>
+          <h3>Habit Tracking</h3>
+          <p>Log daily habits with a simple tap. Organize them into categories and see your consistency build over time.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#10084;&#65039;</div>
+          <h3>Health Biometrics</h3>
+          <p>Record weight, blood pressure, heart rate, body temperature, and more. All in one place, always private.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128200;</div>
+          <h3>Visual Analytics</h3>
+          <p>Interactive charts and trends help you see the bigger picture. Spot correlations you might otherwise miss.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#127919;</div>
+          <h3>Goals &amp; Milestones</h3>
+          <p>Set personal goals with progress tracking. Overlay targets on your charts to stay on course.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128221;</div>
+          <h3>Substance Logging</h3>
+          <p>Track caffeine, alcohol, or any substance with honest, judgment-free logging. Awareness is the first step.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128274;</div>
+          <h3>Private by Design</h3>
+          <p>Your data stays yours. Secured with authentication and stored in your personal account&mdash;never sold or shared.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screenshots -->
+  <section class="section" id="screenshots">
+    <div class="section-inner">
+      <p class="section-label">Screenshots</p>
+      <h2 class="section-title">See it in action</h2>
+      <p class="section-subtitle">A few glimpses of the Pause experience.</p>
+
+      <div class="screenshots-grid">
+        <div class="screenshot-slot">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z"/></svg>
+          Dashboard
+        </div>
+        <div class="screenshot-slot">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z"/></svg>
+          Analytics
+        </div>
+        <div class="screenshot-slot">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z"/></svg>
+          Habit Logging
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- About -->
+  <section class="section about-section" id="about">
+    <div class="section-inner">
+      <div class="about-content">
+        <p class="section-label">Philosophy</p>
+        <h2 class="section-title">Why Pause?</h2>
+        <p>Most tracking apps are designed to make you do more. Pause is designed to help you <strong>notice</strong> more. We believe self-awareness&mdash;not optimization&mdash;is the foundation of meaningful change.</p>
+        <p>The app was born from a simple idea: what if tracking your habits felt less like a performance review and more like a quiet conversation with yourself? No streaks to protect, no gamification to manipulate. Just an honest, clear record of your days.</p>
+        <p>We imagine people using Pause to check in with themselves&mdash;to notice that they sleep better when they walk in the morning, or that their mood dips when they skip meals. Small observations that, over time, become real self-knowledge.</p>
+        <p><em>This section is a placeholder&mdash;you should rewrite it in your own words to reflect your personal philosophy and vision for the app.</em></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Contact -->
+  <section class="section" id="contact">
+    <div class="section-inner">
+      <p class="section-label">Contact</p>
+      <h2 class="section-title">Get in touch</h2>
+      <p class="section-subtitle">Have questions, feedback, or just want to say hello? Send a message below.</p>
+
+      <!--
+        To activate this form:
+        1. Create a free account at https://formspree.io
+        2. Create a new form and copy your form endpoint
+        3. Replace YOUR_FORMSPREE_ENDPOINT below with your endpoint (e.g., https://formspree.io/f/xabcdefg)
+      -->
+      <form class="contact-form" action="YOUR_FORMSPREE_ENDPOINT" method="POST">
+        <div class="form-group">
+          <label for="name">Name</label>
+          <input type="text" id="name" name="name" required>
+        </div>
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" required>
+        </div>
+        <div class="form-group">
+          <label for="message">Message</label>
+          <textarea id="message" name="message" required></textarea>
+        </div>
+        <p class="form-note">This form requires a Formspree endpoint to work. See the HTML comments above for setup instructions.</p>
+        <button type="submit" class="btn-submit">Send Message</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- Privacy Policy -->
+  <section class="section privacy-section" id="privacy">
+    <div class="section-inner">
+      <div class="privacy-content">
+        <p class="section-label">Legal</p>
+        <h2 class="section-title">Privacy Policy</h2>
+        <p><em>Last updated: February 2026. Please review and customize this policy to match your actual data practices before publishing.</em></p>
+
+        <h3>Data Collection</h3>
+        <p>Pause collects only the data you explicitly enter into the app, including habits, biometric measurements, goals, and activity logs. We do not collect analytics, location data, or device identifiers.</p>
+
+        <h3>Data Storage</h3>
+        <p>Your data is stored securely in Google Firebase (Cloud Firestore) and is associated with your authenticated account. Data is encrypted in transit and at rest.</p>
+
+        <h3>Data Sharing</h3>
+        <p>We do not sell, share, or provide your personal data to any third parties. Your data is only accessible to you through your authenticated account.</p>
+
+        <h3>Third-Party Services</h3>
+        <ul>
+          <li><strong>Firebase Authentication</strong> &mdash; Used to securely manage your account and sign-in credentials.</li>
+          <li><strong>Cloud Firestore</strong> &mdash; Used to store your app data in your personal account.</li>
+        </ul>
+
+        <h3>Data Deletion</h3>
+        <p>You can delete your account and all associated data at any time from within the app. Once deleted, your data cannot be recovered.</p>
+
+        <h3>Contact</h3>
+        <p>If you have questions about this privacy policy, please reach out via the <a href="#contact">contact form</a> above.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-inner">
+      <span>&copy; 2026 Pause. All rights reserved.</span>
+      <ul class="footer-links">
+        <li><a href="#privacy">Privacy Policy</a></li>
+        <li><a href="#contact">Contact</a></li>
+        <li><a href="#hero">Back to Top</a></li>
+      </ul>
+    </div>
+  </footer>
+
+  <!-- Minimal JS for mobile nav toggle -->
+  <script>
+    document.querySelector('.nav-toggle').addEventListener('click', function () {
+      document.querySelector('.nav-links').classList.toggle('open');
+    });
+
+    // Close mobile nav when a link is tapped
+    document.querySelectorAll('.nav-links a').forEach(function (link) {
+      link.addEventListener('click', function () {
+        document.querySelector('.nav-links').classList.remove('open');
+      });
+    });
+  </script>
+
+</body>
+</html>
