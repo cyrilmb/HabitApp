@@ -16,8 +16,11 @@ enum GoalFormatters {
         let normalizedHours = hours.truncatingRemainder(dividingBy: 24)
         let h = Int(normalizedHours)
         let m = Int((normalizedHours - Double(h)) * 60)
-        let date = Calendar.current.date(from: DateComponents(hour: h, minute: m)) ?? Date()
+        var comps = DateComponents(hour: h, minute: m)
+        comps.timeZone = .current
+        let date = Calendar.current.date(from: comps) ?? Date()
         let formatter = DateFormatter()
+        formatter.timeZone = .current
         formatter.dateFormat = "h:mm a"
         return formatter.string(from: date)
     }
@@ -33,7 +36,9 @@ enum GoalFormatters {
         let normalizedHours = hours.truncatingRemainder(dividingBy: 24)
         let h = Int(normalizedHours)
         let m = Int((normalizedHours - Double(h)) * 60)
-        return Calendar.current.date(from: DateComponents(hour: h, minute: m)) ?? Date()
+        var comps = DateComponents(hour: h, minute: m)
+        comps.timeZone = .current
+        return Calendar.current.date(from: comps) ?? Date()
     }
 
     // MARK: - Duration (decimal hours <-> h:m components)

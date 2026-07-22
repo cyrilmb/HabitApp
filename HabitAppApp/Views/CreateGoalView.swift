@@ -34,7 +34,7 @@ struct CreateGoalView: View {
     @State private var durationMinutes: Int = 0
     @State private var substanceMode: SubstanceGoalMode = .frequency
     @State private var selectedDrugCategory: DrugCategory?
-    @State private var weightUnit: String = "lbs"
+    @State private var weightUnit: String = UserDefaults.standard.string(forKey: "weightUnit") ?? "lbs"
     @State private var selectedTime: Date = GoalFormatters.dateFromFractionalHours(22.0)
     @State private var sleepHours: Int = 8
     @State private var sleepMinutes: Int = 0
@@ -526,7 +526,7 @@ struct CreateGoalView: View {
             hasPeriod = true
             period = .daily
         case .weight:
-            weightUnit = "lbs"
+            weightUnit = UserDefaults.standard.string(forKey: "weightUnit") ?? "lbs"
             hasPeriod = false
         case .mood:
             moodAxis = "pleasantness"

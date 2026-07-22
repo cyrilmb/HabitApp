@@ -17,11 +17,15 @@ struct BiometricValueEntryView: View {
     @State private var sleepTime: Date = Date()
     @State private var isSaving = false
     @State private var errorMessage: String?
+    @State private var weightUnit: WeightUnit
+    @State private var tempUnit: TempUnit = .fahrenheit
     @StateObject private var viewModel = BiometricEntryViewModel()
 
     init(type: BiometricType) {
         self.type = type
         _viewModel = StateObject(wrappedValue: BiometricEntryViewModel())
+        let pref = UserDefaults.standard.string(forKey: "weightUnit") ?? "lbs"
+        _weightUnit = State(initialValue: pref == "kg" ? .kg : .lbs)
     }
 
     var body: some View {
@@ -102,8 +106,32 @@ struct BiometricValueEntryView: View {
                     .keyboardType(.decimalPad)
                     .font(.title3)
 
-                Text(type.defaultUnit)
-                    .foregroundColor(.secondary)
+                if type == .weight {
+                    Picker("", selection: $weightUnit) {
+                        ForEach(WeightUnit.allCases, id: \.self) { unit in
+                            Text(unit.rawValue).tag(unit)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 100)
+                    .onChange(of: weightUnit) { oldUnit, newUnit in
+                        convertWeight(from: oldUnit, to: newUnit)
+                    }
+                } else if type == .temperature {
+                    Picker("", selection: $tempUnit) {
+                        ForEach(TempUnit.allCases, id: \.self) { unit in
+                            Text(unit.rawValue).tag(unit)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 100)
+                    .onChange(of: tempUnit) { oldUnit, newUnit in
+                        convertTemp(from: oldUnit, to: newUnit)
+                    }
+                } else {
+                    Text(type.defaultUnit)
+                        .foregroundColor(.secondary)
+                }
             }
         } header: {
             Text("Value")
@@ -157,16 +185,28 @@ struct BiometricValueEntryView: View {
     private var footerText: String {
         switch type {
         case .weight:
-            return "Enter your weight in pounds"
+            return weightUnit == .lbs ? "Enter your weight in pounds" : "Enter your weight in kilograms"
         case .heartRate:
             return "Enter your heart rate in beats per minute"
         case .temperature:
-            return "Enter your body temperature in Fahrenheit"
+            return tempUnit == .fahrenheit ? "Enter your body temperature in Fahrenheit" : "Enter your body temperature in Celsius"
         case .bloodPressure:
             return "Enter systolic blood pressure (e.g., 120)"
         default:
             return "Enter a numeric value"
         }
+    }
+
+    private func convertWeight(from oldUnit: WeightUnit, to newUnit: WeightUnit) {
+        guard let v = Double(value), oldUnit != newUnit else { return }
+        let converted = newUnit == .kg ? v / 2.20462 : v * 2.20462
+        value = String(format: "%.1f", converted)
+    }
+
+    private func convertTemp(from oldUnit: TempUnit, to newUnit: TempUnit) {
+        guard let v = Double(value), oldUnit != newUnit else { return }
+        let converted = newUnit == .celsius ? (v - 32) * 5 / 9 : v * 9 / 5 + 32
+        value = String(format: "%.1f", converted)
     }
 
     // MARK: - Save
@@ -213,12 +253,22 @@ struct BiometricValueEntryView: View {
                         return
                     }
 
+                    // Convert to default unit for storage
+                    let storageValue: Double
+                    if type == .weight && weightUnit == .kg {
+                        storageValue = numericValue * 2.20462
+                    } else if type == .temperature && tempUnit == .celsius {
+                        storageValue = numericValue * 9 / 5 + 32
+                    } else {
+                        storageValue = numericValue
+                    }
+
                     let timestamp = type == .sleepDuration ? sleepTime : Date()
 
                     let biometric = Biometric(
                         userId: userId,
                         type: type,
-                        value: numericValue,
+                        value: storageValue,
                         unit: type.defaultUnit,
                         timestamp: timestamp
                     )
@@ -360,4 +410,14 @@ class BiometricEntryViewModel: ObservableObject {
 
         return nil
     }
+}
+
+enum WeightUnit: String, CaseIterable {
+    case lbs = "lbs"
+    case kg = "kg"
+}
+
+enum TempUnit: String, CaseIterable {
+    case fahrenheit = "°F"
+    case celsius = "°C"
 }

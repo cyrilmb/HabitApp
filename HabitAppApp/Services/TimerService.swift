@@ -141,11 +141,11 @@ class TimerService: ObservableObject {
     private func startTimerLoop() {
         timer?.invalidate()
 
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        let newTimer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.updateElapsedTime()
         }
-
-        RunLoop.main.add(timer!, forMode: .common)
+        RunLoop.main.add(newTimer, forMode: .common)
+        timer = newTimer
     }
 
     private func updateElapsedTime() {
@@ -213,9 +213,10 @@ class TimerService: ObservableObject {
         if savedPaused {
             let savedPausedTime = defaults.double(forKey: Keys.pausedTime)
             isPaused = true
-            pausedTime = savedPausedTime > 0 ? Date(timeIntervalSince1970: savedPausedTime) : Date()
+            let restoredPausedTime = savedPausedTime > 0 ? Date(timeIntervalSince1970: savedPausedTime) : restoredStart
+            pausedTime = restoredPausedTime
             // Recalculate elapsed up to the moment it was paused
-            elapsedTime = (pausedTime ?? Date()).timeIntervalSince(Date(timeIntervalSince1970: savedStartTime)) + accumulatedTime
+            elapsedTime = restoredPausedTime.timeIntervalSince(restoredStart) + accumulatedTime
         } else {
             isPaused = false
             elapsedTime = Date().timeIntervalSince(Date(timeIntervalSince1970: savedStartTime)) + accumulatedTime
@@ -330,14 +331,16 @@ class TimerService: ObservableObject {
         if isRunning, let startTime {
             if let existing = running.first {
                 liveActivity = existing
-                // Update it to current state
                 let state = TimerActivityAttributes.ContentState(
                     timerStartDate: startTime,
                     isPaused: isPaused,
                     elapsedAtPause: isPaused ? elapsedTime : 0
                 )
                 let content = ActivityContent(state: state, staleDate: nil)
-                Task { await existing.update(content) }
+                Task {
+                    await existing.update(content)
+                    print("[TimerService] Reconnected and updated Live Activity")
+                }
             } else {
                 startLiveActivity()
             }
@@ -350,7 +353,10 @@ class TimerService: ObservableObject {
                     elapsedAtPause: 0
                 )
                 let content = ActivityContent(state: state, staleDate: nil)
-                Task { await activity.end(content, dismissalPolicy: .immediate) }
+                Task {
+                    await activity.end(content, dismissalPolicy: .immediate)
+                    print("[TimerService] Ended orphaned Live Activity: \(activity.id)")
+                }
             }
         }
     }

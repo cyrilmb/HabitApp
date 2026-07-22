@@ -20,6 +20,7 @@ struct EditBiometricView: View {
     @State private var wakeTime: Date
     @State private var moodPleasantness: Double
     @State private var moodEnergy: Double
+    @AppStorage("weightUnit") private var weightUnit = "lbs"
     @State private var isSaving = false
     @State private var errorMessage: String?
 
@@ -42,7 +43,15 @@ struct EditBiometricView: View {
             self._moodPleasantness = State(initialValue: 0)
             self._moodEnergy = State(initialValue: 0)
         } else {
-            self._value = State(initialValue: String(biometric.value))
+            // For weight, convert stored lbs to preferred display unit
+            let displayValue: Double
+            if biometric.type == .weight {
+                let pref = UserDefaults.standard.string(forKey: "weightUnit") ?? "lbs"
+                displayValue = pref == "kg" ? GoalFormatters.lbsToKg(biometric.value) : biometric.value
+            } else {
+                displayValue = biometric.value
+            }
+            self._value = State(initialValue: String(format: "%.1f", displayValue))
             self._bedTime = State(initialValue: Date())
             self._wakeTime = State(initialValue: Date())
             self._moodPleasantness = State(initialValue: 0)
@@ -79,7 +88,7 @@ struct EditBiometricView: View {
                             TextField("Value", text: $value)
                                 .keyboardType(.decimalPad)
 
-                            Text(biometric.unit)
+                            Text(biometric.type == .weight ? weightUnit : biometric.unit)
                                 .foregroundColor(.secondary)
                         }
                     } header: {
@@ -180,7 +189,12 @@ struct EditBiometricView: View {
                 isSaving = false
                 return
             }
-            biometric.value = numericValue
+            // Convert kg back to lbs for storage
+            if biometric.type == .weight && weightUnit == "kg" {
+                biometric.value = GoalFormatters.kgToLbs(numericValue)
+            } else {
+                biometric.value = numericValue
+            }
         }
         
         biometric.timestamp = timestamp

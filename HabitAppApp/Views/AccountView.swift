@@ -12,6 +12,7 @@ struct AccountView: View {
     @ObservedObject private var firebaseService = FirebaseService.shared
     @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = true
     @AppStorage("hasSeenTooltips") private var hasSeenTooltips = true
+    @AppStorage("weightUnit") private var weightUnit = "lbs"
     @State private var isLinking = false
     @State private var isSigningOut = false
     @State private var isDeletingAccount = false
@@ -81,6 +82,18 @@ struct AccountView: View {
                         .font(.caption)
                     }
                 }
+            }
+
+            Section {
+                Picker("Weight", selection: $weightUnit) {
+                    Text("lbs").tag("lbs")
+                    Text("kg").tag("kg")
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                Text("Units")
+            } footer: {
+                Text("Weight values across the app will be displayed in your chosen unit.")
             }
 
             Section {

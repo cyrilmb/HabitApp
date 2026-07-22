@@ -21,6 +21,7 @@ struct DataDisplayView: View {
     @State private var selectedMoodQuadrant: String?
     @State private var selectedMoodAngle: Double?
     @State private var trendFilterActivity: String = "All"
+    @AppStorage("weightUnit") private var weightUnit = "lbs"
     
     var body: some View {
         ScrollView {
@@ -695,7 +696,8 @@ struct DataDisplayView: View {
                         }
                     }
                     .frame(height: 200)
-                    .chartYScale(domain: .automatic(includesZero: false))
+                    .chartYScale(domain: weightYDomain)
+                    .chartYAxisLabel(weightUnit, position: .trailing)
                     .chartXAxis {
                         AxisMarks(values: .stride(by: xAxisStride)) { _ in
                             AxisValueLabel(format: xAxisDateFormat)
@@ -704,7 +706,7 @@ struct DataDisplayView: View {
                     }
                 }
             }
-            
+
             // Sleep Duration Trend
             if !viewModel.sleepTrendData.isEmpty {
                 ChartCard(title: "Sleep Duration") {
@@ -1180,10 +1182,24 @@ struct DataDisplayView: View {
         goal.unit == "hours" ? goal.value * 60 : goal.value
     }
 
-    /// Convert a weight goal value to match the chart's unit (assumes chart data is in lbs).
+    /// Y-axis domain for the weight trend chart, centered on the data with ~18 unit window.
+    private var weightYDomain: ClosedRange<Double> {
+        let values = viewModel.weightTrendData.map(\.value)
+        guard let lo = values.min(), let hi = values.max() else { return 0...1 }
+        let dataRange = hi - lo
+        let padding = max((20 - dataRange) / 2, 4)
+        return (lo - padding)...(hi + padding)
+    }
+
+    /// Convert a weight goal value to match the chart's display unit.
     private func weightGoalChartValue(_ goal: Goal) -> Double {
-        if goal.unit == "kg" { return GoalFormatters.kgToLbs(goal.value) }
-        return goal.value
+        // Chart data is already converted to the display unit by the view model.
+        // Convert the goal value to match.
+        if weightUnit == "kg" {
+            return goal.unit == "kg" ? goal.value : GoalFormatters.lbsToKg(goal.value)
+        } else {
+            return goal.unit == "kg" ? GoalFormatters.kgToLbs(goal.value) : goal.value
+        }
     }
 
     /// For bed time goals, adjust to 24+ range if before noon (after-midnight bed times).

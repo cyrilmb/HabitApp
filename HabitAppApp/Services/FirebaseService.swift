@@ -48,9 +48,16 @@ class FirebaseService: ObservableObject {
         cacheLock.lock()
         defer { cacheLock.unlock() }
         cache[key] = entry
-        // Evict stale entries to prevent unbounded growth
+        // Evict stale entries first; if still over limit, drop oldest entries
         if cache.count > 50 {
-            cache = cache.filter { $0.value.isValid }
+            let validEntries = cache.filter { $0.value.isValid }
+            if validEntries.count > 50 {
+                let sorted = validEntries.sorted { $0.value.timestamp < $1.value.timestamp }
+                let toKeep = sorted.suffix(40)
+                cache = Dictionary(uniqueKeysWithValues: toKeep.map { ($0.key, $0.value) })
+            } else {
+                cache = validEntries
+            }
         }
     }
 
@@ -109,7 +116,11 @@ class FirebaseService: ObservableObject {
     var userId: String {
         guard let uid = currentUser?.uid, !uid.isEmpty else {
             assertionFailure("FirebaseService.userId accessed before authentication")
-            return currentUser?.uid ?? ""
+            // In production, log the issue and return a placeholder that will
+            // cause Firestore queries to return empty results rather than
+            // writing to invalid paths.
+            print("[FirebaseService] WARNING: userId accessed before authentication")
+            return "__unauthenticated__"
         }
         return uid
     }

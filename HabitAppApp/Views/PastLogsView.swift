@@ -216,6 +216,7 @@ struct LogRowView: View {
     let logItem: LogItem
     let onEdit: () -> Void
     let onDelete: () -> Void
+    @AppStorage("weightUnit") private var weightUnit = "lbs"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -326,6 +327,9 @@ struct LogRowView: View {
                 let isMidnight = (comps.hour == 0 && comps.minute == 0 && comps.second == 0)
                 let displayDate = isMidnight ? b.createdAt : b.timestamp
                 return Self.timeFormatter.string(from: displayDate)
+            } else if b.type == .weight {
+                let displayVal = weightUnit == "kg" ? GoalFormatters.lbsToKg(b.value) : b.value
+                return "\(String(format: "%.1f", displayVal)) \(weightUnit)"
             } else {
                 return "\(String(format: "%.1f", b.value)) \(b.unit)"
             }

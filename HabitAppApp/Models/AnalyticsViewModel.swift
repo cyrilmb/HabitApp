@@ -7,8 +7,10 @@
 
 import Foundation
 import Combine
+import SwiftUI
 
 class AnalyticsViewModel: ObservableObject {
+    @AppStorage("weightUnit") var weightUnit = "lbs"
     @Published var isLoading = false
     @Published var errorMessage: String?
 
@@ -330,16 +332,22 @@ class AnalyticsViewModel: ObservableObject {
         totalBiometrics = biometrics.count
         
         // Weight
+        let useKg = weightUnit == "kg"
+        let unitLabel = useKg ? "kg" : "lbs"
         let weightData = biometrics.filter { $0.type == .weight }.sorted { $0.timestamp > $1.timestamp }
         if let latest = weightData.first {
-            latestWeight = String(format: "%.1f lbs", latest.value)
+            let displayVal = useKg ? GoalFormatters.lbsToKg(latest.value) : latest.value
+            latestWeight = String(format: "%.1f %@", displayVal, unitLabel)
             if let oldest = weightData.last, weightData.count > 1 {
                 let change = latest.value - oldest.value
-                weightChange = String(format: "%@%.1f lbs", change >= 0 ? "+" : "", change)
+                let displayChange = useKg ? GoalFormatters.lbsToKg(change) : change
+                weightChange = String(format: "%@%.1f %@", displayChange >= 0 ? "+" : "", displayChange, unitLabel)
             } else { weightChange = "-" }
         } else { latestWeight = "-"; weightChange = "-" }
-        
-        weightTrendData = weightData.map { BiometricTrendData(date: $0.timestamp, value: $0.value) }.sorted { $0.date < $1.date }
+
+        weightTrendData = weightData.map {
+            BiometricTrendData(date: $0.timestamp, value: useKg ? GoalFormatters.lbsToKg($0.value) : $0.value)
+        }.sorted { $0.date < $1.date }
         
         // Sleep duration
         let sleepData = biometrics.filter { $0.type == .sleepDuration }.sorted { $0.timestamp < $1.timestamp }
@@ -362,7 +370,8 @@ class AnalyticsViewModel: ObservableObject {
         // Evening bed times are shifted forward one day to the wake day.
         // After-midnight bed times already fall on the wake day.
         // Wake times use their actual date (already the wake day).
-        let cal = Calendar.current
+        var cal = Calendar.current
+        cal.timeZone = .current  // Ensure local timezone for hour extraction
         var points: [BedWakeDataPoint] = []
 
         for b in biometrics where b.type == .bedTime {

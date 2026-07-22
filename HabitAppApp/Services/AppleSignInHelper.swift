@@ -38,7 +38,7 @@ class AppleSignInHelper: NSObject {
         guard result == errSecSuccess else {
             throw AppleSignInError.nonceGenerationFailed
         }
-        let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvxyz-._")
+        let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._")
         return String(bytes.map { charset[Int($0) % charset.count] })
     }
 
